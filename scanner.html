@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Сканер штрих-кодів</title>
   <script src="./quagga.min.js" async></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js" async></script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     body {
@@ -51,20 +52,29 @@
       word-break: break-all;
       padding: 0 10px;
     }
-    #stopButton {
+    #stopButton, #startButton {
       margin-top: 20px;
       padding: 10px 20px;
       font-size: 1rem;
-      background-color: #dc3545;
       color: white;
       border: none;
       border-radius: 8px;
       cursor: pointer;
-      display: none;
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    }
+    #stopButton {
+      background-color: #dc3545;
+      display: none;
     }
     #stopButton:hover {
       background-color: #c82333;
+    }
+    #startButton {
+      background-color: #28a745;
+      display: none;
+    }
+    #startButton:hover {
+      background-color: #218838;
     }
     @media (max-width: 600px) {
       body {
@@ -87,16 +97,31 @@
   </div>
   <p id="result"></p>
   <button onclick="stopScanner()" id="stopButton">Зупинити сканер</button>
+  <button onclick="startScanner()" id="startButton">Почати сканування</button>
 
   <script>
     let scannerRunning = false;
+    const isDebug = false; // Встановити false для продакшену
+
+    function log(...args) {
+      if (isDebug) console.log(...args);
+    }
+
+    function translateError(err) {
+      if (err.name === "PermissionDeniedError") return "Доступ до камери заборонено.";
+      if (err.name === "NotFoundError") return "Камера не знайдена.";
+      return err.message || "Невідома помилка.";
+    }
 
     function startScanner() {
-      if (typeof Quagga === 'undefined') {
+      if (!window.Quagga) {
         document.getElementById("result").innerText = "Помилка: Бібліотека Quagga не завантажена.";
-        console.error("Quagga library failed to load.");
+        log("Quagga library failed to load.");
         return;
       }
+
+      document.getElementById("result").innerText = "Сканування...";
+      document.getElementById("startButton").style.display = "none";
 
       Quagga.init({
         inputStream: {
@@ -105,8 +130,8 @@
           target: document.querySelector('#scanner-container'),
           constraints: {
             facingMode: "environment",
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: window.innerWidth > 600 ? 1280 : 640 },
+            height: { ideal: window.innerWidth > 600 ? 720 : 360 },
             aspectRatio: { ideal: 16 / 9 }
           }
         },
@@ -131,14 +156,17 @@
         locate: true
       }, function(err) {
         if (err) {
-          console.error("Помилка ініціалізації Quagga:", err);
-          document.getElementById("result").innerText = "Помилка ініціалізації: " + err.message;
+          log("Помилка ініціалізації Quagga:", err);
+          document.getElementById("result").innerText = "Помилка ініціалізації: " + translateError(err);
           if (err.name === "PermissionDeniedError" || err.message.includes("Permission denied")) {
-            alert("Будь ласка, надайте доступ до камери для сканування.");
+            document.getElementById("result").innerText += " Надайте доступ до камери в налаштуваннях браузера.";
+            setTimeout(() => {
+              if (confirm("Спробувати ще раз?")) startScanner();
+            }, 1000);
           }
           return;
         }
-        console.log("Quagga ініціалізовано успішно");
+        log("Quagga ініціалізовано успішно");
         document.getElementById("stopButton").style.display = "inline";
         Quagga.start();
         scannerRunning = true;
@@ -148,13 +176,17 @@
         if (!scannerRunning) return;
         const code = result.codeResult.code;
         document.getElementById("result").innerText = "Знайдено штрих-код: " + code;
-        console.log("Знайдено штрих-код:", code);
+        log("Знайдено штрих-код:", code);
 
         if (window.Telegram && window.Telegram.WebApp) {
           window.Telegram.WebApp.sendData(code);
           window.Telegram.WebApp.close();
         } else {
-          alert("Не вдалося відправити дані в Telegram. Використовуйте Telegram WebApp.");
+          navigator.clipboard.writeText(code).then(() => {
+            alert("Штрих-код скопійовано в буфер обміну: " + code);
+          }).catch(() => {
+            alert("Не вдалося скопіювати штрих-код: " + code);
+          });
         }
 
         stopScanner();
@@ -162,7 +194,7 @@
 
       Quagga.onProcessed(function(result) {
         if (result) {
-          console.log("Обробка кадру:", result);
+          log("Обробка кадру:", result);
         }
       });
     }
@@ -172,24 +204,29 @@
         Quagga.stop();
         scannerRunning = false;
         document.getElementById("stopButton").style.display = "none";
+        document.getElementById("startButton").style.display = "inline";
         document.getElementById("result").innerText = "Сканер зупинено.";
-        console.log("Сканер зупинено");
+        log("Сканер зупинено");
       }
     }
 
     if (window.Telegram && window.Telegram.WebApp) {
       window.Telegram.WebApp.ready();
-      console.log("Telegram WebApp ініціалізовано");
+      log("Telegram WebApp ініціалізовано");
     }
 
     window.onload = function() {
-      console.log("Запуск сканера...");
+      log("Запуск сканера...");
       const quaggaScript = document.querySelector('script[src="./quagga.min.js"]');
       if (quaggaScript) {
         quaggaScript.onload = startScanner;
         quaggaScript.onerror = function() {
-          console.error("Не вдалося завантажити quagga.min.js");
-          document.getElementById("result").innerText = "Помилка: Не вдалося завантажити бібліотеку Quagga.";
+          log("Не вдалося завантажити quagga.min.js");
+          if (!window.Quagga) {
+            document.getElementById("result").innerText = "Помилка: Не вдалося завантажити бібліотеку Quagga.";
+          } else {
+            startScanner();
+          }
         };
       } else {
         startScanner();
