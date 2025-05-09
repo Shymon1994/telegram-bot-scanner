@@ -7,9 +7,10 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-    <div id="reader" style="width: 600px;"></div>
+    <div id="reader" style="width: 600px; display: none;"></div>
     <p id="result"></p>
-    <button onclick="stopScanner()">Зупинити сканер</button>
+    <button onclick="startScanner()">Запустити сканер</button>
+    <button onclick="stopScanner()" style="display: none;" id="stopButton">Зупинити сканер</button>
 
     <script>
         const html5QrcodeScanner = new Html5QrcodeScanner(
@@ -20,11 +21,14 @@
             if (!scannerRunning) return;
             scannerRunning = false;
             document.getElementById("result").innerHTML = `Знайдено штрих-код: ${decodedText}`;
+            document.getElementById("reader").style.display = "none";
+            document.getElementById("stopButton").style.display = "none";
             html5QrcodeScanner.clear();
 
             // Відправка результату в Telegram через WebApp
             if (window.Telegram && window.Telegram.WebApp) {
                 window.Telegram.WebApp.sendData(decodedText);
+                window.Telegram.WebApp.close();
             } else {
                 alert("Не вдалося відправити дані в Telegram. Використовуйте Telegram WebApp.");
             }
@@ -32,6 +36,8 @@
 
         function startScanner() {
             if (!scannerRunning) {
+                document.getElementById("reader").style.display = "block";
+                document.getElementById("stopButton").style.display = "inline";
                 html5QrcodeScanner.render(onScanSuccess);
                 scannerRunning = true;
             }
@@ -41,6 +47,8 @@
             if (scannerRunning) {
                 html5QrcodeScanner.clear();
                 scannerRunning = false;
+                document.getElementById("reader").style.display = "none";
+                document.getElementById("stopButton").style.display = "none";
                 document.getElementById("result").innerHTML = "Сканер зупинено.";
             }
         }
@@ -49,9 +57,6 @@
         if (window.Telegram && window.Telegram.WebApp) {
             window.Telegram.WebApp.ready();
         }
-
-        // Автоматичний старт
-        window.onload = startScanner;
     </script>
 </body>
 </html>
