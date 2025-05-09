@@ -7,9 +7,8 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-    <div id="reader" style="width: 600px; display: none;"></div>
+    <div id="reader" style="width: 100%; max-width: 600px;"></div>
     <p id="result"></p>
-    <button onclick="startScanner()">Запустити сканер</button>
     <button onclick="stopScanner()" style="display: none;" id="stopButton">Зупинити сканер</button>
 
     <script>
@@ -21,7 +20,6 @@
             if (!scannerRunning) return;
             scannerRunning = false;
             document.getElementById("result").innerHTML = `Знайдено штрих-код: ${decodedText}`;
-            document.getElementById("reader").style.display = "none";
             document.getElementById("stopButton").style.display = "none";
             html5QrcodeScanner.clear();
 
@@ -34,11 +32,21 @@
             }
         }
 
+        function onScanError(errorMessage) {
+            // Обробка помилок сканування
+            console.error("Scan error:", errorMessage);
+            document.getElementById("result").innerHTML = "Помилка сканування: " + errorMessage;
+        }
+
         function startScanner() {
             if (!scannerRunning) {
-                document.getElementById("reader").style.display = "block";
                 document.getElementById("stopButton").style.display = "inline";
-                html5QrcodeScanner.render(onScanSuccess);
+                html5QrcodeScanner.render(onScanSuccess, onScanError)
+                    .catch(err => {
+                        console.error("Failed to start scanner:", err);
+                        document.getElementById("result").innerHTML = "Не вдалося запустити сканер: " + err;
+                        alert("Будь ласка, надайте доступ до камери для сканування.");
+                    });
                 scannerRunning = true;
             }
         }
@@ -47,7 +55,6 @@
             if (scannerRunning) {
                 html5QrcodeScanner.clear();
                 scannerRunning = false;
-                document.getElementById("reader").style.display = "none";
                 document.getElementById("stopButton").style.display = "none";
                 document.getElementById("result").innerHTML = "Сканер зупинено.";
             }
@@ -57,6 +64,11 @@
         if (window.Telegram && window.Telegram.WebApp) {
             window.Telegram.WebApp.ready();
         }
+
+        // Автоматичний запуск сканера
+        window.onload = function() {
+            startScanner();
+        };
     </script>
 </body>
 </html>
