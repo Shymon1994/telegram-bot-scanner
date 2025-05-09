@@ -18,6 +18,7 @@
       justify-content: center;
       min-height: 100vh;
       overflow: hidden;
+      touch-action: none; /* Запобігає масштабуванню пальцями */
     }
     h1 {
       font-size: 1.5rem;
@@ -28,7 +29,7 @@
     #scanner-container {
       width: 100%;
       max-width: 100%;
-      aspect-ratio: 4 / 3;
+      height: 60vh; /* Займає більшу частину екрана */
       border: 5px solid #007aff;
       border-radius: 12px;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
@@ -48,6 +49,7 @@
       font-weight: bold;
       text-align: center;
       word-break: break-all;
+      padding: 0 10px;
     }
     #stopButton {
       margin-top: 20px;
@@ -72,6 +74,7 @@
         font-size: 1.2rem;
       }
       #scanner-container {
+        height: 70vh; /* Більше місця на маленьких екранах */
         border-width: 3px;
       }
     }
@@ -87,7 +90,6 @@
 
   <script>
     function startScanner() {
-      // Перевірка, чи Quagga доступна
       if (typeof Quagga === 'undefined') {
         document.getElementById("result").innerText = "Помилка: Бібліотека Quagga не завантажена.";
         console.error("Quagga library failed to load.");
@@ -100,28 +102,28 @@
           type: "LiveStream",
           target: document.querySelector('#scanner-container'),
           constraints: {
-            facingMode: "environment", // Задня камера
-            width: { ideal: 1280 }, // Вища роздільна здатність
-            height: { ideal: 720 },
-            aspectRatio: { ideal: 4 / 3 }
+            facingMode: "environment",
+            width: { ideal: 1920 }, // Висока роздільна здатність
+            height: { ideal: 1080 },
+            aspectRatio: { ideal: 16 / 9 }
           }
         },
         decoder: {
           readers: [
-            "ean_reader",      // EAN-13
-            "ean_8_reader",    // EAN-8
-            "upc_reader",      // UPC-A
-            "code_128_reader", // Code 128
-            "code_39_reader",  // Code 39
-            "itf_reader"       // ITF
+            "ean_reader",
+            "ean_8_reader",
+            "upc_reader",
+            "code_128_reader",
+            "code_39_reader",
+            "itf_reader"
           ]
         },
         locator: {
-          patchSize: "medium", // Оптимізація для швидкості
+          patchSize: "medium",
           halfSample: true
         },
-        numOfWorkers: navigator.hardwareConcurrency || 4, // Використовуємо кілька потоків
-        frequency: 10, // Частота сканування
+        numOfWorkers: navigator.hardwareConcurrency || 4,
+        frequency: 10,
         locate: true
       }, function(err) {
         if (err) {
@@ -154,12 +156,10 @@
       }
     }
 
-    // Ініціалізація Telegram WebApp
     if (window.Telegram && window.Telegram.WebApp) {
       window.Telegram.WebApp.ready();
     }
 
-    // Запускаємо сканер після завантаження сторінки
     window.onload = startScanner;
   </script>
 </body>
