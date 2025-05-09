@@ -23,7 +23,6 @@
             document.getElementById("stopButton").style.display = "none";
             html5QrcodeScanner.clear();
 
-            // Відправка результату в Telegram через WebApp
             if (window.Telegram && window.Telegram.WebApp) {
                 window.Telegram.WebApp.sendData(decodedText);
                 window.Telegram.WebApp.close();
@@ -33,7 +32,6 @@
         }
 
         function onScanError(errorMessage) {
-            // Обробка помилок сканування
             console.error("Scan error:", errorMessage);
             document.getElementById("result").innerHTML = "Помилка сканування: " + errorMessage;
         }
@@ -60,12 +58,10 @@
             }
         }
 
-        // Ініціалізація Telegram WebApp
         if (window.Telegram && window.Telegram.WebApp) {
             window.Telegram.WebApp.ready();
         }
 
-        // Автоматичний запуск сканера
         window.onload = function() {
             startScanner();
         };
