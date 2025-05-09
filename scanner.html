@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Сканер штрих-кодів</title>
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -12,9 +12,22 @@
     <button onclick="stopScanner()" style="display: none;" id="stopButton">Зупинити сканер</button>
 
     <script>
-        const html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", { fps: 10, qrbox: 250 });
+        // Перевірка, чи завантажена бібліотека
+        if (typeof Html5QrcodeScanner === "undefined") {
+            document.getElementById("result").innerHTML = "Помилка: Не вдалося завантажити бібліотеку html5-qrcode. Перевірте підключення до мережі.";
+            throw new Error("Html5QrcodeScanner is not defined. Library failed to load.");
+        }
+
+        let html5QrcodeScanner;
         let scannerRunning = false;
+
+        // Ініціалізація сканера після завантаження бібліотеки
+        try {
+            html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+        } catch (error) {
+            document.getElementById("result").innerHTML = "Помилка ініціалізації сканера: " + error.message;
+            throw error;
+        }
 
         function onScanSuccess(decodedText, decodedResult) {
             if (!scannerRunning) return;
