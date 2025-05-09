@@ -89,6 +89,8 @@
   <button onclick="stopScanner()" id="stopButton">Зупинити сканер</button>
 
   <script>
+    let scannerRunning = false;
+
     function startScanner() {
       if (typeof Quagga === 'undefined') {
         document.getElementById("result").innerText = "Помилка: Бібліотека Quagga не завантажена.";
@@ -103,20 +105,22 @@
           target: document.querySelector('#scanner-container'),
           constraints: {
             facingMode: "environment",
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
+            width: { ideal: 1280 }, // Зменшено для кращої сумісності
+            height: { ideal: 720 },
             aspectRatio: { ideal: 16 / 9 }
           }
         },
         decoder: {
           readers: [
-            "ean_reader",
-            "ean_8_reader",
-            "upc_reader",
-            "code_128_reader",
-            "code_39_reader",
-            "itf_reader"
-          ]
+            "ean_reader",       // EAN-13 (стандартні штрих-коди)
+            "ean_8_reader",     // EAN-8
+            "upc_reader",       // UPC-A
+            "upc_e_reader",     // UPC-E
+            "code_128_reader",  // Code 128
+            "code_39_reader",   // Code 39
+            "itf_reader"        // Interleaved 2 of 5
+          ],
+          multiple: false
         },
         locator: {
           patchSize: "medium",
@@ -128,39 +132,60 @@
       }, function(err) {
         if (err) {
           console.error("Помилка ініціалізації Quagga:", err);
-          document.getElementById("result").innerText = "Помилка: " + err.message;
+          document.getElementById("result").innerText = "Помилка ініціалізації: " + err.message;
+          if (err.name === "PermissionDeniedError" || err.message.includes("Permission denied")) {
+            alert("Будь ласка, надайте доступ до камери для сканування.");
+          }
           return;
         }
+        console.log("Quagga ініціалізовано успішно");
         document.getElementById("stopButton").style.display = "inline";
         Quagga.start();
+        scannerRunning = true;
       });
 
       Quagga.onDetected(function(result) {
+        if (!scannerRunning) return;
         const code = result.codeResult.code;
         document.getElementById("result").innerText = "Знайдено штрих-код: " + code;
+        console.log("Знайдено штрих-код:", code);
 
         if (window.Telegram && window.Telegram.WebApp) {
           window.Telegram.WebApp.sendData(code);
           window.Telegram.WebApp.close();
+        } else {
+          alert("Не вдалося відправити дані в Telegram. Використовуйте Telegram WebApp.");
         }
 
         stopScanner();
       });
+
+      Quagga.onProcessed(function(result) {
+        if (result) {
+          console.log("Обробка кадру:", result);
+        }
+      });
     }
 
     function stopScanner() {
-      if (Quagga) {
+      if (Quagga && scannerRunning) {
         Quagga.stop();
+        scannerRunning = false;
         document.getElementById("stopButton").style.display = "none";
         document.getElementById("result").innerText = "Сканер зупинено.";
+        console.log("Сканер зупинено");
       }
     }
 
     if (window.Telegram && window.Telegram.WebApp) {
       window.Telegram.WebApp.ready();
+      console.log("Telegram WebApp ініціалізовано");
     }
 
-    window.onload = startScanner;
+    window.onload = function() {
+      console.log("Запуск сканера...");
+      startScanner();
+    };
   </script>
 </body>
 </html>
