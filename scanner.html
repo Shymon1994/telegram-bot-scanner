@@ -44,6 +44,13 @@
       object-fit: contain;
       display: block;
     }
+    #scanner-container canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
     #result {
       margin-top: 15px;
       font-size: 1.1rem;
@@ -52,6 +59,12 @@
       text-align: center;
       word-break: break-all;
       padding: 0 10px;
+    }
+    #instructions {
+      margin-top: 10px;
+      font-size: 0.9rem;
+      color: #555;
+      text-align: center;
     }
     #stopButton, #startButton {
       margin-top: 20px;
@@ -95,8 +108,10 @@
   <h1>Сканер штрих-коду</h1>
   <div id="scanner-container">
     <video id="video" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
   </div>
   <p id="result">Очікування ініціалізації...</p>
+  <p id="instructions">Наведіть камеру на штрих-код і тримайте на відстані 10–30 см.</p>
   <button onclick="stopScanner()" id="stopButton">Зупинити сканер</button>
   <button onclick="startScanner()" id="startButton">Почати сканування</button>
 
@@ -148,6 +163,7 @@
     async function startScanner(facingMode = "environment") {
       document.getElementById("result").innerText = "Ініціалізація камери...";
       document.getElementById("startButton").style.display = "none";
+      document.getElementById("instructions").style.display = "block";
 
       // Перевірка бібліотеки Quagga
       if (!window.Quagga) {
@@ -162,6 +178,7 @@
       } catch (err) {
         document.getElementById("result").innerText = err.message;
         log(err.message);
+        document.getElementById("startButton").style.display = "inline";
         return;
       }
 
@@ -172,6 +189,7 @@
       } catch (err) {
         document.getElementById("result").innerText = err.message;
         log(err.message);
+        document.getElementById("startButton").style.display = "inline";
         return;
       }
 
@@ -179,7 +197,8 @@
       const constraints = {
         facingMode: facingMode,
         width: { ideal: Math.min(window.innerWidth, 640) },
-        height: { ideal: Math.min(window.innerHeight * 0.7, 480) }
+        height: { ideal: Math.min(window.innerHeight * 0.7, 480) },
+        focusMode: "continuous" // Додаємо автоматичне фокусування
       };
 
       log("Налаштування камери:", constraints);
@@ -201,16 +220,23 @@
               "upc_e_reader",
               "code_128_reader",
               "code_39_reader",
+              "code_93_reader", // Додано Code 93
               "itf_reader"
             ],
-            multiple: false
+            multiple: false,
+            debug: {
+              drawBoundingBox: true,
+              showFrequency: isDebug,
+              drawScanline: true,
+              showPattern: isDebug
+            }
           },
           locator: {
-            patchSize: "medium",
-            halfSample: true
+            patchSize: "large", // Збільшено для кращого розпізнавання
+            halfSample: false // Вимкнено для підвищення точності
           },
           numOfWorkers: 0,
-          frequency: 10,
+          frequency: 30, // Збільшено частоту обробки кадрів
           locate: true
         }, function(err) {
           if (err) {
@@ -252,6 +278,30 @@
         return;
       }
 
+      // Візуалізація рамки сканування
+      Quagga.onProcessed(function(result) {
+        const drawingCtx = Quagga.canvas.ctx.overlay;
+        const drawingCanvas = Quagga.canvas.dom.overlay;
+
+        if (result) {
+          drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+          if (result.boxes) {
+            result.boxes.forEach(function(box) {
+              Quagga.ImageDebug.drawPath(box, { x: 0, y: 1 }, drawingCtx, { color: "red", lineWidth: 2 });
+            });
+          }
+          if (result.box) {
+            Quagga.ImageDebug.drawPath(result.box, { x: 0, y: 1 }, drawingCtx, { color: "blue", lineWidth: 2 });
+          }
+          if (result.codeResult && result.codeResult.code) {
+            log("Попереднє виявлення:", result.codeResult.code);
+          }
+        }
+        if (isDebug) {
+          log("Обробка кадру:", result);
+        }
+      });
+
       // Обробка результатів сканування
       Quagga.onDetected(function(result) {
         if (!scannerRunning) return;
@@ -272,12 +322,6 @@
 
         stopScanner();
       });
-
-      Quagga.onProcessed(function(result) {
-        if (result && isDebug) {
-          log("Обробка кадру:", result);
-        }
-      });
     }
 
     function stopScanner() {
@@ -287,6 +331,7 @@
         document.getElementById("stopButton").style.display = "none";
         document.getElementById("startButton").style.display = "inline";
         document.getElementById("result").innerText = "Сканер зупинено.";
+        document.getElementById("instructions").style.display = "none";
         log("Сканер зупинено");
         const video = document.querySelector('#video');
         if (video.srcObject) {
