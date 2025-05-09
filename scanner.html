@@ -64,77 +64,85 @@
     if (typeof ZXing === 'undefined') {
       document.getElementById("result").innerText = "Помилка: Бібліотека ZXing не завантажена.";
       console.error("ZXing library failed to load.");
-    } else {
-      const codeReader = new ZXing.BrowserMultiFormatReader();
-      let selectedDeviceId;
-      let controls;
-
-      async function startScanner() {
-        try {
-          const devices = await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
-          selectedDeviceId = devices[0]?.deviceId;
-
-          if (!selectedDeviceId) {
-            document.getElementById("result").innerText = "Не знайдено камеру.";
-            return;
-          }
-
-          document.getElementById("stopButton").style.display = "inline";
-
-          const hints = new Map();
-          const formats = [
-            ZXing.BarcodeFormat.EAN_13,
-            ZXing.BarcodeFormat.EAN_8,
-            ZXing.BarcodeFormat.UPC_A,
-            ZXing.BarcodeFormat.UPC_E,
-            ZXing.BarcodeFormat.CODE_128,
-            ZXing.BarcodeFormat.CODE_39,
-            ZXing.BarcodeFormat.ITF
-          ];
-          hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
-
-          controls = await codeReader.decodeFromVideoDevice(
-            selectedDeviceId,
-            'video',
-            (result, err) => {
-              if (result) {
-                document.getElementById("result").innerText = "Знайдено штрих-код: " + result.text;
-
-                if (window.Telegram && window.Telegram.WebApp) {
-                  window.Telegram.WebApp.sendData(result.text);
-                  window.Telegram.WebApp.close();
-                }
-
-                stopScanner();
-              }
-
-              if (err && !(err instanceof ZXing.NotFoundException)) {
-                console.error("Помилка сканування:", err);
-                document.getElementById("result").innerText = "Помилка сканування.";
-              }
-            },
-            hints
-          );
-        } catch (err) {
-          console.error("Помилка запуску сканера:", err);
-          document.getElementById("result").innerText = "Не вдалося запустити сканер.";
-        }
-      }
-
-      function stopScanner() {
-        if (controls) {
-          controls.stop();
-          document.getElementById("stopButton").style.display = "none";
-          document.getElementById("result").innerText = "Сканер зупинено.";
-        }
-      }
-
-      if (window.Telegram && window.Telegram.WebApp) {
-        window.Telegram.WebApp.ready();
-      }
-
-      window.onload = startScanner;
+      throw new Error("ZXing not loaded");
     }
+
+    const codeReader = new ZXing.BrowserMultiFormatReader();
+    let selectedDeviceId;
+    let controls;
+
+    async function startScanner() {
+      try {
+        // Використовуємо navigator.mediaDevices для отримання списку камер
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        selectedDeviceId = videoDevices[0]?.deviceId;
+
+        if (!selectedDeviceId) {
+          document.getElementById("result").innerText = "Не знайдено камеру.";
+          console.error("No video input devices found.");
+          return;
+        }
+
+        document.getElementById("stopButton").style.display = "inline";
+
+        // Налаштування форматів штрих-кодів (виключаємо QR-коди)
+        const hints = new Map();
+        const formats = [
+          ZXing.BarcodeFormat.EAN_13,
+          ZXing.BarcodeFormat.EAN_8,
+          ZXing.BarcodeFormat.UPC_A,
+          ZXing.BarcodeFormat.UPC_E,
+          ZXing.BarcodeFormat.CODE_128,
+          ZXing.BarcodeFormat.CODE_39,
+          ZXing.BarcodeFormat.ITF
+        ];
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+
+        // Запускаємо сканування
+        controls = await codeReader.decodeFromVideoDevice(
+          selectedDeviceId,
+          'video',
+          (result, err) => {
+            if (result) {
+              document.getElementById("result").innerText = "Знайдено штрих-код: " + result.text;
+
+              if (window.Telegram && window.Telegram.WebApp) {
+                window.Telegram.WebApp.sendData(result.text);
+                window.Telegram.WebApp.close();
+              }
+
+              stopScanner();
+            }
+
+            if (err && !(err instanceof ZXing.NotFoundException)) {
+              console.error("Помилка сканування:", err);
+              document.getElementById("result").innerText = "Помилка сканування: " + err.message;
+            }
+          },
+          hints
+        );
+      } catch (err) {
+        console.error("Помилка запуску сканера:", err);
+        document.getElementById("result").innerText = "Не вдалося запустити сканер: " + err.message;
+      }
+    }
+
+    function stopScanner() {
+      if (controls) {
+        controls.stop();
+        document.getElementById("stopButton").style.display = "none";
+        document.getElementById("result").innerText = "Сканер зупинено.";
+      }
+    }
+
+    // Ініціалізація Telegram WebApp
+    if (window.Telegram && window.Telegram.WebApp) {
+      window.Telegram.WebApp.ready();
+    }
+
+    // Запускаємо сканер після завантаження сторінки
+    window.onload = startScanner;
   </script>
 </body>
 </html>
