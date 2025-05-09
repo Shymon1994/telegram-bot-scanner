@@ -18,7 +18,7 @@
       justify-content: center;
       min-height: 100vh;
       overflow: hidden;
-      touch-action: none; /* Запобігає масштабуванню пальцями */
+      touch-action: none;
     }
     h1 {
       font-size: 1.5rem;
@@ -29,7 +29,7 @@
     #scanner-container {
       width: 100%;
       max-width: 100%;
-      height: 60vh; /* Займає більшу частину екрана */
+      height: 70vh; /* Займає більшу частину екрана */
       border: 5px solid #007aff;
       border-radius: 12px;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
@@ -74,7 +74,7 @@
         font-size: 1.2rem;
       }
       #scanner-container {
-        height: 70vh; /* Більше місця на маленьких екранах */
+        height: 80vh; /* Максимальна висота для маленьких екранів */
         border-width: 3px;
       }
     }
@@ -103,7 +103,7 @@
           target: document.querySelector('#scanner-container'),
           constraints: {
             facingMode: "environment",
-            width: { ideal: 1920 }, // Висока роздільна здатність
+            width: { ideal: 1920 },
             height: { ideal: 1080 },
             aspectRatio: { ideal: 16 / 9 }
           }
