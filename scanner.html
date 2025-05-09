@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Сканер штрих-кодів</title>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div id="reader" style="width: 600px;"></div>
+    <p id="result"></p>
+    <button onclick="stopScanner()">Зупинити сканер</button>
+
+    <script>
+        const html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", { fps: 10, qrbox: 250 });
+        let scannerRunning = false;
+
+        function onScanSuccess(decodedText, decodedResult) {
+            if (!scannerRunning) return;
+            scannerRunning = false;
+            document.getElementById("result").innerHTML = `Знайдено штрих-код: ${decodedText}`;
+            html5QrcodeScanner.clear();
+
+            // Відправка результату в Telegram через WebApp
+            if (window.Telegram && window.Telegram.WebApp) {
+                window.Telegram.WebApp.sendData(decodedText);
+            } else {
+                alert("Не вдалося відправити дані в Telegram. Використовуйте Telegram WebApp.");
+            }
+        }
+
+        function startScanner() {
+            if (!scannerRunning) {
+                html5QrcodeScanner.render(onScanSuccess);
+                scannerRunning = true;
+            }
+        }
+
+        function stopScanner() {
+            if (scannerRunning) {
+                html5QrcodeScanner.clear();
+                scannerRunning = false;
+                document.getElementById("result").innerHTML = "Сканер зупинено.";
+            }
+        }
+
+        // Ініціалізація Telegram WebApp
+        if (window.Telegram && window.Telegram.WebApp) {
+            window.Telegram.WebApp.ready();
+        }
+
+        // Автоматичний старт
+        window.onload = startScanner;
+    </script>
+</body>
+</html>
