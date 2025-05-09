@@ -101,7 +101,9 @@
 
   <script>
     let scannerRunning = false;
-    const isDebug = false; // Встановити false для продакшену
+    const isDebug = true; // Встановити false для продакшену
+    const maxRetries = 3;
+    let retryCount = 0;
 
     function log(...args) {
       if (isDebug) console.log(...args);
@@ -110,10 +112,24 @@
     function translateError(err) {
       if (err.name === "PermissionDeniedError") return "Доступ до камери заборонено.";
       if (err.name === "NotFoundError") return "Камера не знайдена.";
+      if (err.name === "NotAllowedError") return "Доступ до камери заблоковано.";
       return err.message || "Невідома помилка.";
     }
 
-    function startScanner() {
+    async function checkCameraAvailability() {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === "videoinput");
+        if (videoDevices.length === 0) {
+          throw new Error("Камера не знайдена на пристрої.");
+        }
+        return videoDevices;
+      } catch (err) {
+        throw new Error("Не вдалося перевірити наявність камери: " + translateError(err));
+      }
+    }
+
+    async function startScanner(facingMode = "environment") {
       if (!window.Quagga) {
         document.getElementById("result").innerText = "Помилка: Бібліотека Quagga не завантажена.";
         log("Quagga library failed to load.");
@@ -123,17 +139,27 @@
       document.getElementById("result").innerText = "Сканування...";
       document.getElementById("startButton").style.display = "none";
 
+      try {
+        await checkCameraAvailability();
+      } catch (err) {
+        document.getElementById("result").innerText = err.message;
+        log(err.message);
+        return;
+      }
+
+      const constraints = {
+        facingMode: facingMode,
+        width: { ideal: window.innerWidthzorWidth > 600 ? 1280 : 640 },
+        height: { ideal: window.innerWidth > 600 ? 720 : 360 },
+        aspectRatio: { ideal: 16 / 9 }
+      };
+
       Quagga.init({
         inputStream: {
           name: "Live",
           type: "LiveStream",
           target: document.querySelector('#scanner-container'),
-          constraints: {
-            facingMode: "environment",
-            width: { ideal: window.innerWidth > 600 ? 1280 : 640 },
-            height: { ideal: window.innerWidth > 600 ? 720 : 360 },
-            aspectRatio: { ideal: 16 / 9 }
-          }
+          constraints: constraints
         },
         decoder: {
           readers: [
@@ -158,18 +184,28 @@
         if (err) {
           log("Помилка ініціалізації Quagga:", err);
           document.getElementById("result").innerText = "Помилка ініціалізації: " + translateError(err);
-          if (err.name === "PermissionDeniedError" || err.message.includes("Permission denied")) {
+
+          if ((err.name === "PermissionDeniedError" || err.name === "NotAllowedError") && retryCount < maxRetries) {
+            retryCount++;
             document.getElementById("result").innerText += " Надайте доступ до камери в налаштуваннях браузера.";
             setTimeout(() => {
-              if (confirm("Спробувати ще раз?")) startScanner();
+              if (confirm("Спробувати ще раз?")) startScanner(facingMode);
             }, 1000);
+          } else if (err.name === "NotFoundError" && facingMode === "environment") {
+            log("Задня камера не знайдена, пробуємо передню...");
+            retryCount = 0;
+            startScanner("user");
+          } else {
+            document.getElementById("result").innerText += " Перевірте, чи камера доступна.";
           }
           return;
         }
+
         log("Quagga ініціалізовано успішно");
         document.getElementById("stopButton").style.display = "inline";
         Quagga.start();
         scannerRunning = true;
+        retryCount = 0;
       });
 
       Quagga.onDetected(function(result) {
