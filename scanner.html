@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Сканер штрих-кодів</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     body {
@@ -43,13 +42,6 @@
       height: 100%;
       object-fit: contain;
       display: block;
-    }
-    #scanner-container canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
     }
     #result {
       margin-top: 15px;
@@ -108,7 +100,6 @@
   <h1>Сканер штрих-коду</h1>
   <div id="scanner-container">
     <video id="video" autoplay playsinline muted></video>
-    <canvas id="overlay"></canvas>
   </div>
   <p id="result">Очікування ініціалізації...</p>
   <p id="instructions">Наведіть камеру на штрих-код і тримайте на відстані 10–30 см. Забезпечте хороше освітлення.</p>
@@ -120,6 +111,8 @@
     const isDebug = true; // Встановити false для продакшену
     const maxRetries = 3;
     let retryCount = 0;
+    let barcodeDetector;
+    let animationFrameId;
 
     function log(...args) {
       if (isDebug) console.log(...args);
@@ -160,18 +153,23 @@
       }
     }
 
+    async function checkBarcodeDetectorSupport() {
+      if (!('BarcodeDetector' in window)) {
+        throw new Error("API BarcodeDetector не підтримується в цьому браузері.");
+      }
+      try {
+        barcodeDetector = new BarcodeDetector({
+          formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf"]
+        });
+      } catch (err) {
+        throw new Error("Не вдалося ініціалізувати BarcodeDetector: " + err.message);
+      }
+    }
+
     async function startScanner(facingMode = "environment") {
       document.getElementById("result").innerText = "Ініціалізація камери...";
       document.getElementById("startButton").style.display = "none";
       document.getElementById("instructions").style.display = "block";
-
-      // Перевірка бібліотеки Quagga
-      if (!window.Quagga || !window.Quagga.init || !window.Quagga.start) {
-        document.getElementById("result").innerText = "Помилка: Бібліотека Quagga не завантажена або пошкоджена.";
-        log("Quagga library failed to load or is corrupted.");
-        document.getElementById("startButton").style.display = "inline";
-        return;
-      }
 
       // Перевірка безпечного контексту
       try {
@@ -194,7 +192,17 @@
         return;
       }
 
-      // Налаштування параметрів камери
+      // Перевірка підтримки BarcodeDetector
+      try {
+        await checkBarcodeDetectorSupport();
+      } catch (err) {
+        document.getElementById("result").innerText = err.message;
+        log(err.message);
+        document.getElementById("startButton").style.display = "inline";
+        return;
+      }
+
+      // Налаштування відеопотоку
       const constraints = {
         facingMode: facingMode,
         width: { ideal: Math.min(window.innerWidth, 640) },
@@ -203,131 +211,81 @@
 
       log("Налаштування камери:", constraints);
 
-      // Ініціалізація Quagga
+      const video = document.getElementById('video');
       try {
-        Quagga.init({
-          inputStream: {
-            name: "Live",
-            type: "LiveStream",
-            target: document.querySelector('#scanner-container'),
-            constraints: constraints
-          },
-          decoder: {
-            readers: [
-              "ean_reader",
-              "ean_8_reader",
-              "upc_reader",
-              "upc_e_reader",
-              "code_128_reader",
-              "code_39_reader",
-              "code_93_reader",
-              "itf_reader"
-            ],
-            multiple: false,
-            debug: {
-              drawBoundingBox: true,
-              showFrequency: isDebug,
-              drawScanline: true,
-              showPattern: isDebug
-            }
-          },
-          locator: {
-            patchSize: "medium",
-            halfSample: true
-          },
-          numOfWorkers: 0,
-          frequency: 60,
-          locate: true
-        }, function(err) {
-          if (err) {
-            log("Помилка ініціалізації Quagga:", err);
-            document.getElementById("result").innerText = "Помилка: " + (err.message || translateError(err));
+        const stream = await navigator.mediaDevices.getUserMedia({ video: constraints });
+        video.srcObject = stream;
+        await video.play();
+      } catch (err) {
+        log("Помилка доступу до камери:", err);
+        document.getElementById("result").innerText = "Помилка: " + translateError(err);
 
-            if ((err.name === "PermissionDeniedError" || err.name === "NotAllowedError") && retryCount < maxRetries) {
-              retryCount++;
-              setTimeout(() => {
-                if (confirm("Надайте доступ до камери. Спробувати ще раз?")) {
-                  startScanner(facingMode);
-                } else {
-                  document.getElementById("result").innerText = "Сканування скасовано.";
-                  document.getElementById("startButton").style.display = "inline";
-                }
-              }, 1000);
-            } else if (err.name === "NotFoundError" && facingMode === "environment" && videoDevices.length > 0) {
-              log("Задня камера не знайдена, пробуємо передню...");
-              retryCount = 0;
-              startScanner("user");
+        if ((err.name === "PermissionDeniedError" || err.name === "NotAllowedError") && retryCount < maxRetries) {
+          retryCount++;
+          setTimeout(() => {
+            if (confirm("Надайте доступ до камери. Спробувати ще раз?")) {
+              startScanner(facingMode);
             } else {
-              document.getElementById("result").innerText += " Перевірте, чи камера доступна.";
+              document.getElementById("result").innerText = "Сканування скасовано.";
               document.getElementById("startButton").style.display = "inline";
             }
-            return;
-          }
-
-          log("Quagga ініціалізовано успішно");
-          document.getElementById("result").innerText = "Сканування...";
-          document.getElementById("stopButton").style.display = "inline";
-          Quagga.start();
-          scannerRunning = true;
+          }, 1000);
+        } else if (err.name === "NotFoundError" && facingMode === "environment" && videoDevices.length > 0) {
+          log("Задня камера не знайдена, пробуємо передню...");
           retryCount = 0;
-        });
-      } catch (err) {
-        document.getElementById("result").innerText = "Критична помилка: " + translateError(err);
-        log("Критична помилка Quagga:", err);
-        document.getElementById("startButton").style.display = "inline";
+          startScanner("user");
+        } else {
+          document.getElementById("result").innerText += " Перевірте, чи камера доступна.";
+          document.getElementById("startButton").style.display = "inline";
+        }
         return;
       }
 
-      // Візуалізація рамки сканування
-      Quagga.onProcessed(function(result) {
-        const drawingCtx = Quagga.canvas.ctx.overlay;
-        const drawingCanvas = Quagga.canvas.dom.overlay;
+      log("Камера ініціалізована успішно");
+      document.getElementById("result").innerText = "Сканування...";
+      document.getElementById("stopButton").style.display = "inline";
+      scannerRunning = true;
+      retryCount = 0;
 
-        if (result) {
-          drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
-          if (result.boxes) {
-            result.boxes.forEach(function(box) {
-              Quagga.ImageDebug.drawPath(box, { x: 0, y: 1 }, drawingCtx, { color: "red", lineWidth: 2 });
-            });
-          }
-          if (result.box) {
-            Quagga.ImageDebug.drawPath(result.box, { x: 0, y: 1 }, drawingCtx, { color: "blue", lineWidth: 2 });
-          }
-          if (result.codeResult && result.codeResult.code) {
-            log("Попереднє виявлення:", result.codeResult.code);
-          }
-        }
-        if (isDebug) {
-          log("Обробка кадру:", result);
-        }
-      });
-
-      // Обробка результатів сканування
-      Quagga.onDetected(function(result) {
+      // Сканування штрих-кодів
+      async function scanBarcode() {
         if (!scannerRunning) return;
-        const code = result.codeResult.code;
-        document.getElementById("result").innerText = "Знайдено штрих-код: " + code;
-        log("Знайдено штрих-код:", code);
 
-        if (window.Telegram && window.Telegram.WebApp) {
-          window.Telegram.WebApp.sendData(code);
-          window.Telegram.WebApp.close();
-        } else {
-          navigator.clipboard.writeText(code).then(() => {
-            alert("Штрих-код скопійовано в буфер обміну: " + code);
-          }).catch(() => {
-            alert("Не вдалося скопіювати штрих-код: " + code);
-          });
+        try {
+          const barcodes = await barcodeDetector.detect(video);
+          if (barcodes.length > 0) {
+            const code = barcodes[0].rawValue;
+            document.getElementById("result").innerText = "Знайдено штрих-код: " + code;
+            log("Знайдено штрих-код:", code);
+
+            if (window.Telegram && window.Telegram.WebApp) {
+              window.Telegram.WebApp.sendData(code);
+              window.Telegram.WebApp.close();
+            } else {
+              navigator.clipboard.writeText(code).then(() => {
+                alert("Штрих-код скопійовано в буфер обміну: " + code);
+              }).catch(() => {
+                alert("Не вдалося скопіювати штрих-код: " + code);
+              });
+            }
+
+            stopScanner();
+          } else {
+            animationFrameId = requestAnimationFrame(scanBarcode);
+          }
+        } catch (err) {
+          log("Помилка сканування:", err);
+          animationFrameId = requestAnimationFrame(scanBarcode);
         }
+      }
 
-        stopScanner();
-      });
+      scanBarcode();
     }
 
     function stopScanner() {
-      if (Quagga && scannerRunning) {
-        Quagga.stop();
+      if (scannerRunning) {
         scannerRunning = false;
+        cancelAnimationFrame(animationFrameId);
         document.getElementById("stopButton").style.display = "none";
         document.getElementById("startButton").style.display = "inline";
         document.getElementById("result").innerText = "Сканер зупинено.";
@@ -348,7 +306,7 @@
       setTimeout(() => {
         log("Запуск сканера з затримкою...");
         startScanner();
-      }, 500); // Затримка для готовності Telegram
+      }, 500);
     } else {
       window.onload = function() {
         log("Запуск сканера...");
