@@ -2,119 +2,119 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8">
-  <title>Сканер штрих-кодів</title>
+  <title>Сканер штрих-коду</title>
   <script src="https://unpkg.com/@zxing/browser@latest"></script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     body {
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #f4f4f4;
+      font-family: Arial, sans-serif;
+      background-color: #f2f2f2;
       margin: 0;
       padding: 20px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
     }
 
     h1 {
-      font-size: 1.5rem;
+      font-size: 20px;
       margin-bottom: 10px;
-      color: #333;
     }
 
-    #video {
+    select {
+      padding: 10px;
+      margin-bottom: 10px;
       width: 100%;
       max-width: 400px;
-      border: 5px solid #007aff;
-      border-radius: 12px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-      background-color: #000;
+    }
+
+    video {
+      width: 100%;
+      max-width: 400px;
+      border: 2px solid #007aff;
+      border-radius: 8px;
+      background-color: black;
     }
 
     #result {
       margin-top: 15px;
-      font-size: 1.1rem;
-      color: #007aff;
       font-weight: bold;
-      text-align: center;
+      color: #007aff;
     }
 
     #stopButton {
-      margin-top: 20px;
+      margin-top: 10px;
       padding: 10px 20px;
-      font-size: 1rem;
+      font-size: 16px;
       background-color: #dc3545;
       color: white;
       border: none;
-      border-radius: 8px;
-      cursor: pointer;
+      border-radius: 6px;
       display: none;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-    }
-
-    #stopButton:hover {
-      background-color: #c82333;
     }
   </style>
 </head>
 <body>
   <h1>Сканер штрих-коду</h1>
+  <select id="cameraSelect"></select>
   <video id="video" playsinline></video>
   <p id="result"></p>
-  <button onclick="stopScanner()" id="stopButton">Зупинити сканер</button>
+  <button id="stopButton" onclick="stopScanner()">Зупинити</button>
 
   <script>
     const codeReader = new ZXing.BrowserBarcodeReader();
-    let selectedDeviceId;
     let controls;
 
-    async function startScanner() {
-      const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
-      selectedDeviceId = devices[0]?.deviceId;
+    async function startScanner(deviceId) {
+      if (controls) await controls.stop();
 
-      if (!selectedDeviceId) {
-        document.getElementById("result").innerText = "Не знайдено камеру.";
-        return;
-      }
+      controls = await codeReader.decodeFromVideoDevice(deviceId, 'video', (result, err) => {
+        if (result) {
+          document.getElementById("result").innerText = "Зчитано: " + result.text;
+
+          if (window.Telegram && window.Telegram.WebApp) {
+            window.Telegram.WebApp.sendData(result.text);
+            window.Telegram.WebApp.close();
+          }
+
+          stopScanner();
+        }
+      });
 
       document.getElementById("stopButton").style.display = "inline";
+    }
 
-      controls = await codeReader.decodeFromVideoDevice(
-        selectedDeviceId,
-        'video',
-        (result, err) => {
-          if (result) {
-            document.getElementById("result").innerText = "Знайдено штрих-код: " + result.text;
+    async function listCameras() {
+      const cameras = await ZXing.BrowserCodeReader.listVideoInputDevices();
+      const select = document.getElementById("cameraSelect");
 
-            if (window.Telegram && window.Telegram.WebApp) {
-              window.Telegram.WebApp.sendData(result.text);
-              window.Telegram.WebApp.close();
-            }
+      cameras.forEach(cam => {
+        const option = document.createElement("option");
+        option.value = cam.deviceId;
+        option.text = cam.label || `Камера ${select.length + 1}`;
+        select.appendChild(option);
+      });
 
-            stopScanner(); // зупиняємо після першого успішного зчитування
-          }
+      if (cameras.length > 0) {
+        startScanner(cameras[0].deviceId);
+      }
 
-          if (err && !(err instanceof ZXing.NotFoundException)) {
-            console.error("Помилка сканування:", err);
-          }
-        }
-      );
+      select.onchange = () => startScanner(select.value);
     }
 
     function stopScanner() {
-      if (controls) {
-        controls.stop();
-        document.getElementById("stopButton").style.display = "none";
-        document.getElementById("result").innerText = "Сканер зупинено.";
+      if (controls) controls.stop();
+      document.getElementById("stopButton").style.display = "none";
+      document.getElementById("result").innerText = "Сканер зупинено.";
+    }
+
+    window.onload = () => {
+      if (window.Telegram && window.Telegram.WebApp) {
+        window.Telegram.WebApp.ready();
       }
-    }
 
-    if (window.Telegram && window.Telegram.WebApp) {
-      window.Telegram.WebApp.ready();
-    }
-
-    window.onload = startScanner;
+      listCameras();
+    };
   </script>
 </body>
 </html>
