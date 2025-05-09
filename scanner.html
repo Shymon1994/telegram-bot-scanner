@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Сканер штрих-кодів</title>
-  <script src="https://cdn.jsdelivr.net/npm/quagga@0.14.0/dist/quagga.min.js"></script>
+  <script src="./quagga.min.js" async></script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     body {
@@ -126,7 +126,7 @@
           patchSize: "medium",
           halfSample: true
         },
-        numOfWorkers: 0, // Вимкнено Web Workers для уникнення помилок
+        numOfWorkers: 0, // Вимкнено Web Workers для уникнення попередніх помилок
         frequency: 10,
         locate: true
       }, function(err) {
@@ -182,9 +182,19 @@
       console.log("Telegram WebApp ініціалізовано");
     }
 
+    // Чекаємо завантаження Quagga перед запуском сканера
     window.onload = function() {
       console.log("Запуск сканера...");
-      startScanner();
+      const quaggaScript = document.querySelector('script[src="./quagga.min.js"]');
+      if (quaggaScript) {
+        quaggaScript.onload = startScanner;
+        quaggaScript.onerror = function() {
+          console.error("Не вдалося завантажити quagga.min.js");
+          document.getElementById("result").innerText = "Помилка: Не вдалося завантажити бібліотеку Quagga.";
+        };
+      } else {
+        startScanner();
+      }
     };
   </script>
 </body>
