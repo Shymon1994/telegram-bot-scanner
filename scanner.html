@@ -126,7 +126,7 @@
           patchSize: "medium",
           halfSample: true
         },
-        numOfWorkers: 0, // Вимкнено Web Workers для уникнення попередніх помилок
+        numOfWorkers: 0,
         frequency: 10,
         locate: true
       }, function(err) {
@@ -182,7 +182,6 @@
       console.log("Telegram WebApp ініціалізовано");
     }
 
-    // Чекаємо завантаження Quagga перед запуском сканера
     window.onload = function() {
       console.log("Запуск сканера...");
       const quaggaScript = document.querySelector('script[src="./quagga.min.js"]');
