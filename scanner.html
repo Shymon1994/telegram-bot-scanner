@@ -1,227 +1,165 @@
 <!DOCTYPE html>
 <html lang="uk">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Сканер штрих-кодів</title>
-  <script>
-    function onLibraryLoadError() {
-      console.log("Помилка завантаження бібліотеки html5-qrcode.min.js. Перевірте, чи файл існує за шляхом ./html5-qrcode.min.js.");
-      document.getElementById("result").innerText = "Помилка завантаження бібліотеки. Переконайтеся, що файл html5-qrcode.min.js розміщено в кореневій папці.";
-      document.getElementById("startButton").style.display = "inline";
-    }
-  </script>
-  <script src="./html5-qrcode.min.js" onerror="onLibraryLoadError()"></script>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <style>
-    body {
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #f4f4f4;
-      margin: 0;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      overflow: auto;
-      touch-action: manipulation;
-    }
-    h1 {
-      font-size: 1.5rem;
-      margin-bottom: 10px;
-      color: #333;
-      text-align: center;
-    }
-    #reader {
-      width: 100%;
-      max-width: 640px;
-      height: 70vh;
-      max-height: 480px;
-      border: 5px solid #007aff;
-      border-radius: 12px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-      background-color: #000;
-    }
-    #result {
-      margin-top: 15px;
-      font-size: 1.1rem;
-      color: #007aff;
-      font-weight: bold;
-      text-align: center;
-      word-break: break-all;
-      padding: 0 10px;
-    }
-    #instructions {
-      margin-top: 10px;
-      font-size: 0.9rem;
-      color: #555;
-      text-align: center;
-    }
-    #stopButton, #startButton {
-      margin-top: 20px;
-      padding: 10px 20px;
-      font-size: 1rem;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-    }
-    #stopButton {
-      background-color: #dc3545;
-      display: none;
-    }
-    #stopButton:hover {
-      background-color: #c82333;
-    }
-    #startButton {
-      background-color: #28a745;
-      display: inline;
-    }
-    #startButton:hover {
-      background-color: #218838;
-    }
-    @media (max-width: 600px) {
-      body {
-        padding: 5px;
-      }
-      h1 {
-        font-size: 1.2rem;
-      }
-      #reader {
-        height: 60vh;
-        border-width: 3px;
-      }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сканер штрих-кодів</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        #reader {
+            width: 100%;
+            max-width: 400px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #result {
+            margin-top: 20px;
+            font-size: 18px;
+            text-align: center;
+            word-wrap: break-word;
+        }
+        .log {
+            background-color: #2a2a2a;
+            padding: 10px;
+            margin-top: 20px;
+            border-radius: 5px;
+            max-height: 100px;
+            overflow-y: auto;
+            width: 100%;
+            max-width: 400px;
+        }
+        .animation {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
 </head>
 <body>
-  <h1>Сканер штрих-кодів</h1>
-  <div id="reader"></div>
-  <p id="result">Очікування ініціалізації...</p>
-  <p id="instructions">Наведіть камеру на штрих-код і тримайте на відстані 10–30 см. Забезпечте хороше освітлення.</p>
-  <button onclick="stopScanner()" id="stopButton">Зупинити сканер</button>
-  <button onclick="startScanner()" id="startButton">Почати сканування</button>
+    <h2>Сканер штрих-кодів</h2>
+    <div id="reader"></div>
+    <button onclick="startScanner()">Почати сканування</button>
+    <button onclick="stopScanner()" style="display: none;" id="stopButton">Зупинити сканер</button>
+    <button onclick="startScanner()" style="display: none;" id="retryButton">Повторити сканування</button>
+    <div id="result"></div>
+    <div class="log" id="log"></div>
 
-  <script>
-    let scannerRunning = false;
-    const isDebug = true;
-    const maxRetries = 3;
-    let retryCount = 0;
-    let html5QrcodeScanner;
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" onerror="onLibraryLoadError()"></script>
+    <script>
+        let html5QrcodeScanner = null;
 
-    function log(...args) {
-      if (isDebug) console.log(...args);
-    }
-
-    function translateError(err) {
-      if (err.name === "PermissionDeniedError" || err.name === "NotAllowedError") {
-        return "Доступ до камери заборонено. Надайте дозвіл у налаштуваннях.";
-      }
-      if (err.name === "NotFoundError") {
-        return "Камера не знайдена на пристрої.";
-      }
-      return err.message || "Невідома помилка.";
-    }
-
-    function startScanner() {
-      document.getElementById("result").innerText = "Ініціалізація камери...";
-      document.getElementById("startButton").style.display = "none";
-      document.getElementById("instructions").style.display = "block";
-
-      if (!window.Html5Qrcode || !window.Html5QrcodeScanner) {
-        log("html5-qrcode library failed to load.");
-        document.getElementById("result").innerText = "Бібліотека html5-qrcode не завантажена. Переконайтеся, що файл html5-qrcode.min.js розміщено в кореневій папці.";
-        document.getElementById("startButton").style.display = "inline";
-        return;
-      }
-
-      html5QrcodeScanner = new Html5QrcodeScanner(
-        "reader",
-        {
-          fps: 5, // Зменшуємо для кращої продуктивності
-          qrbox: 200, // Менший розмір для точнішого сканування
-          aspectRatio: 1.333,
-          formatsToSupport: [Html5QrcodeSupportedFormats.EAN_13], // Вказуємо, що шукаємо EAN-13
-          disableFlip: true // Уникаємо перевертання зображення
-        },
-        false
-      );
-
-      html5QrcodeScanner.render(
-        (decodedText, decodedResult) => {
-          log("Знайдено штрих-код:", decodedText, decodedResult);
-          document.getElementById("result").innerText = "Знайдено штрих-код: " + decodedText;
-
-          if (window.Telegram && window.Telegram.WebApp) {
-            try {
-              window.Telegram.WebApp.sendData(decodedText);
-              window.Telegram.WebApp.close();
-              log("Дані відправлено в Telegram:", decodedText);
-            } catch (err) {
-              log("Помилка відправки даних у Telegram:", err);
-              document.getElementById("result").innerText = "Помилка відправки: " + decodedText;
-            }
-          } else {
-            navigator.clipboard.writeText(decodedText).then(() => {
-              alert("Штрих-код скопійовано: " + decodedText);
-              log("Штрих-код скопійовано в буфер обміну:", decodedText);
-            }).catch((err) => {
-              log("Помилка копіювання в буфер обміну:", err);
-              alert("Не вдалося скопіювати штрих-код: " + decodedText);
-            });
-          }
-
-          stopScanner();
-        },
-        (errorMessage) => {
-          log("Помилка сканування:", errorMessage);
-          if (errorMessage.includes("Permission denied") && retryCount < maxRetries) {
-            retryCount++;
-            setTimeout(() => {
-              if (confirm("Надайте доступ до камери. Спробувати ще раз?")) {
-                startScanner();
-              } else {
-                stopScanner();
-              }
-            }, 1000);
-          } else if (errorMessage.includes("No MultiFormat Readers")) {
-            document.getElementById("result").innerText = "Штрих-код не розпізнано. Спробуйте ще раз.";
-          }
+        function log(...args) {
+            const logElement = document.getElementById("log");
+            logElement.innerHTML += args.join(" ") + "<br>";
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(...args);
         }
-      );
 
-      scannerRunning = true;
-      retryCount = 0;
-      log("Сканер запущено");
-    }
+        function onLibraryLoadError() {
+            document.getElementById("result").innerText = "Помилка завантаження бібліотеки. Перевірте підключення до Інтернету.";
+            log("Помилка: html5-qrcode.min.js не завантажено.");
+        }
 
-    function stopScanner() {
-      if (scannerRunning && html5QrcodeScanner) {
-        html5QrcodeScanner.clear();
-        scannerRunning = false;
-        document.getElementById("stopButton").style.display = "none";
-        document.getElementById("startButton").style.display = "inline";
-        document.getElementById("result").innerText = "Сканер зупинено.";
-        document.getElementById("instructions").style.display = "none";
-        log("Сканер зупинено");
-      }
-    }
+        function startScanner() {
+            document.getElementById("result").innerText = "";
+            document.getElementById("stopButton").style.display = "inline-block";
+            document.getElementById("retryButton").style.display = "none";
 
-    if (window.Telegram && window.Telegram.WebApp) {
-      window.Telegram.WebApp.ready();
-      log("Telegram WebApp ініціалізовано");
-      setTimeout(() => {
-        log("Запуск сканера з затримкою...");
-        startScanner();
-      }, 1000);
-    } else {
-      window.onload = function() {
-        log("Запуск сканера...");
-        startScanner();
-      };
-    }
-  </script>
+            html5QrcodeScanner = new Html5QrcodeScanner(
+                "reader",
+                {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 },
+                    formatsToSupport: [
+                        Html5QrcodeSupportedFormats.EAN_13,
+                        Html5QrcodeSupportedFormats.UPC_A,
+                        Html5QrcodeSupportedFormats.CODE_128,
+                        Html5QrcodeSupportedFormats.QR_CODE
+                    ]
+                },
+                false
+            );
+
+            html5QrcodeScanner.render(
+                (decodedText, decodedResult) => {
+                    document.getElementById("result").innerText = `Знайдено штрих-код: ${decodedText}`;
+                    document.getElementById("result").classList.add("animation");
+                    log("Знайдено штрих-код:", decodedText, decodedResult);
+
+                    try {
+                        window.Telegram.WebApp.sendData(decodedText);
+                        window.Telegram.WebApp.close();
+                        log("Дані відправлено в Telegram:", decodedText);
+                    } catch (err) {
+                        log("Помилка відправки даних:", err);
+                        document.getElementById("result").innerText += `\nПомилка: ${err.message}`;
+                    }
+
+                    stopScanner();
+                    document.getElementById("retryButton").style.display = "inline-block";
+                },
+                (error) => {
+                    // Логування помилок сканування
+                    log("Помилка сканування:", error);
+                }
+            );
+
+            Html5Qrcode.getCameras().then(cameras => {
+                if (cameras && cameras.length) {
+                    log("Доступні камери:", cameras);
+                } else {
+                    document.getElementById("result").innerText = "Камери не знайдено.";
+                    log("Камери не знайдено.");
+                }
+            }).catch(err => {
+                document.getElementById("result").innerText = `Помилка доступу до камери: ${err}`;
+                log("Помилка доступу до камери:", err);
+            });
+        }
+
+        function stopScanner() {
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.clear();
+                document.getElementById("stopButton").style.display = "none";
+                log("Сканер зупинено.");
+            }
+        }
+
+        window.onload = function() {
+            if (!window.Telegram || !window.Telegram.WebApp) {
+                document.getElementById("result").innerText = "Telegram WebApp API недоступний.";
+                log("Помилка: Telegram WebApp API недоступний.");
+            } else {
+                window.Telegram.WebApp.ready();
+                log("Telegram WebApp API ініціалізовано.");
+            }
+        };
+    </script>
 </body>
 </html>
