@@ -4,6 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Сканер штрих-кодів</title>
+  <script>
+    function onLibraryLoadError() {
+      console.log("Помилка завантаження бібліотеки html5-qrcode.min.js. Перевірте, чи файл існує за шляхом ./html5-qrcode.min.js.");
+      document.getElementById("result").innerText = "Помилка завантаження бібліотеки. Переконайтеся, що файл html5-qrcode.min.js розміщено в кореневій папці.";
+      document.getElementById("startButton").style.display = "inline";
+    }
+  </script>
   <script src="./html5-qrcode.min.js" onerror="onLibraryLoadError()"></script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
@@ -108,12 +115,6 @@
       if (isDebug) console.log(...args);
     }
 
-    function onLibraryLoadError() {
-      log("Помилка завантаження бібліотеки html5-qrcode.min.js. Перевірте, чи файл існує за шляхом ./html5-qrcode.min.js.");
-      document.getElementById("result").innerText = "Помилка завантаження бібліотеки. Переконайтеся, що файл html5-qrcode.min.js розміщено в кореневій папці.";
-      document.getElementById("startButton").style.display = "inline";
-    }
-
     function translateError(err) {
       if (err.name === "PermissionDeniedError" || err.name === "NotAllowedError") {
         return "Доступ до камери заборонено. Надайте дозвіл у налаштуваннях.";
@@ -138,7 +139,13 @@
 
       html5QrcodeScanner = new Html5QrcodeScanner(
         "reader",
-        { fps: 10, qrbox: 250, aspectRatio: 1.333 },
+        {
+          fps: 5, // Зменшуємо для кращої продуктивності
+          qrbox: 200, // Менший розмір для точнішого сканування
+          aspectRatio: 1.333,
+          formatsToSupport: [Html5QrcodeSupportedFormats.EAN_13], // Вказуємо, що шукаємо EAN-13
+          disableFlip: true // Уникаємо перевертання зображення
+        },
         false
       );
 
@@ -179,6 +186,8 @@
                 stopScanner();
               }
             }, 1000);
+          } else if (errorMessage.includes("No MultiFormat Readers")) {
+            document.getElementById("result").innerText = "Штрих-код не розпізнано. Спробуйте ще раз.";
           }
         }
       );
