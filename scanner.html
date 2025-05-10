@@ -1,318 +1,124 @@
 <!DOCTYPE html>
 <html lang="uk">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Сканер штрих-кодів</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Сканер штрих-коду (Debug)</title>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     body {
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #f4f4f4;
       margin: 0;
-      padding: 10px;
+      padding: 0;
+      font-family: monospace;
+      background: #1e1e1e;
+      color: #00ff99;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      overflow: auto;
-      touch-action: manipulation;
     }
-    h1 {
-      font-size: 1.5rem;
-      margin-bottom: 10px;
-      color: #333;
-      text-align: center;
-    }
-    #scanner-container {
+    #reader {
       width: 100%;
-      max-width: 640px;
-      height: 70vh;
-      max-height: 480px;
-      border: 5px solid #007aff;
-      border-radius: 12px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-      background-color: #000;
-      position: relative;
-      overflow: visible;
-    }
-    #scanner-container video {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      display: block;
-    }
-    #result {
-      margin-top: 15px;
-      font-size: 1.1rem;
-      color: #007aff;
-      font-weight: bold;
-      text-align: center;
-      word-break: break-all;
-      padding: 0 10px;
-    }
-    #instructions {
-      margin-top: 10px;
-      font-size: 0.9rem;
-      color: #555;
-      text-align: center;
-    }
-    #stopButton, #startButton {
+      max-width: 400px;
       margin-top: 20px;
-      padding: 10px 20px;
-      font-size: 1rem;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
     }
-    #stopButton {
-      background-color: #dc3545;
-      display: none;
+    #status, #log {
+      width: 100%;
+      max-width: 400px;
+      padding: 10px;
+      margin-top: 10px;
+      background: #2e2e2e;
+      border-radius: 5px;
+      font-size: 0.95em;
     }
-    #stopButton:hover {
-      background-color: #c82333;
+    #log {
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
     }
-    #startButton {
-      background-color: #28a745;
-      display: inline;
-    }
-    #startButton:hover {
-      background-color: #218838;
-    }
-    @media (max-width: 600px) {
-      body {
-        padding: 5px;
-      }
-      h1 {
-        font-size: 1.2rem;
-      }
-      #scanner-container {
-        height: 60vh;
-        border-width: 3px;
-      }
-    }
+    .error { color: #ff5555; }
+    .success { color: #00ff99; }
+    .warn { color: #ffaa00; }
   </style>
 </head>
 <body>
-  <h1>Сканер штрих-коду</h1>
-  <div id="scanner-container">
-    <video id="video" autoplay playsinline muted></video>
-  </div>
-  <p id="result">Очікування ініціалізації...</p>
-  <p id="instructions">Наведіть камеру на штрих-код і тримайте на відстані 10–30 см. Забезпечте хороше освітлення.</p>
-  <button onclick="stopScanner()" id="stopButton">Зупинити сканер</button>
-  <button onclick="startScanner()" id="startButton">Почати сканування</button>
+  <div id="reader"></div>
+  <div id="status" class="warn">⏳ Ініціалізація сканера...</div>
+  <div id="log"></div>
 
   <script>
-    let scannerRunning = false;
-    const isDebug = true; // Встановити false для продакшену
-    const maxRetries = 3;
-    let retryCount = 0;
-    let barcodeDetector;
-    let animationFrameId;
+    const statusElem = document.getElementById("status");
+    const logElem = document.getElementById("log");
 
-    function log(...args) {
-      if (isDebug) console.log(...args);
+    function log(message, type = 'log') {
+      const entry = document.createElement('div');
+      entry.className = type;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logElem.appendChild(entry);
+      logElem.scrollTop = logElem.scrollHeight;
+      console.log(message);
     }
 
-    function translateError(err) {
-      if (err.name === "PermissionDeniedError" || err.name === "NotAllowedError") {
-        return "Доступ до камери заборонено. Надайте дозвіл у налаштуваннях браузера.";
-      }
-      if (err.name === "NotFoundError") {
-        return "Камера не знайдена на пристрої.";
-      }
-      if (err.name === "SecurityError") {
-        return "Потрібен безпечний контекст (HTTPS або localhost).";
-      }
-      return err.message || "Невідома помилка.";
+    function updateStatus(message, type = 'log') {
+      statusElem.textContent = message;
+      statusElem.className = type;
+      log(`STATUS: ${message}`, type);
     }
 
-    async function checkCameraAvailability() {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("API медіапристроїв не підтримується цим браузером.");
-      }
+    const sendCodeToBot = (code) => {
+      updateStatus(`✅ Код зчитано: ${code}`, 'success');
       try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === "videoinput");
-        if (videoDevices.length === 0) {
-          throw new Error("Камера не знайдена на пристрої.");
-        }
-        return videoDevices;
-      } catch (err) {
-        throw new Error("Не вдалося перевірити наявність камери: " + translateError(err));
-      }
-    }
-
-    async function checkSecureContext() {
-      if (!window.isSecureContext) {
-        throw new Error("Цей додаток потребує безпечного контексту (HTTPS або localhost).");
-      }
-    }
-
-    async function checkBarcodeDetectorSupport() {
-      if (!('BarcodeDetector' in window)) {
-        throw new Error("API BarcodeDetector не підтримується в цьому браузері.");
-      }
-      try {
-        barcodeDetector = new BarcodeDetector({
-          formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf"]
-        });
-      } catch (err) {
-        throw new Error("Не вдалося ініціалізувати BarcodeDetector: " + err.message);
-      }
-    }
-
-    async function startScanner(facingMode = "environment") {
-      document.getElementById("result").innerText = "Ініціалізація камери...";
-      document.getElementById("startButton").style.display = "none";
-      document.getElementById("instructions").style.display = "block";
-
-      // Перевірка безпечного контексту
-      try {
-        await checkSecureContext();
-      } catch (err) {
-        document.getElementById("result").innerText = err.message;
-        log(err.message);
-        document.getElementById("startButton").style.display = "inline";
-        return;
-      }
-
-      // Перевірка наявності камери
-      let videoDevices;
-      try {
-        videoDevices = await checkCameraAvailability();
-      } catch (err) {
-        document.getElementById("result").innerText = err.message;
-        log(err.message);
-        document.getElementById("startButton").style.display = "inline";
-        return;
-      }
-
-      // Перевірка підтримки BarcodeDetector
-      try {
-        await checkBarcodeDetectorSupport();
-      } catch (err) {
-        document.getElementById("result").innerText = err.message;
-        log(err.message);
-        document.getElementById("startButton").style.display = "inline";
-        return;
-      }
-
-      // Налаштування відеопотоку
-      const constraints = {
-        facingMode: facingMode,
-        width: { ideal: Math.min(window.innerWidth, 640) },
-        height: { ideal: Math.min(window.innerHeight * 0.7, 480) }
-      };
-
-      log("Налаштування камери:", constraints);
-
-      const video = document.getElementById('video');
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: constraints });
-        video.srcObject = stream;
-        await video.play();
-      } catch (err) {
-        log("Помилка доступу до камери:", err);
-        document.getElementById("result").innerText = "Помилка: " + translateError(err);
-
-        if ((err.name === "PermissionDeniedError" || err.name === "NotAllowedError") && retryCount < maxRetries) {
-          retryCount++;
-          setTimeout(() => {
-            if (confirm("Надайте доступ до камери. Спробувати ще раз?")) {
-              startScanner(facingMode);
-            } else {
-              document.getElementById("result").innerText = "Сканування скасовано.";
-              document.getElementById("startButton").style.display = "inline";
-            }
-          }, 1000);
-        } else if (err.name === "NotFoundError" && facingMode === "environment" && videoDevices.length > 0) {
-          log("Задня камера не знайдена, пробуємо передню...");
-          retryCount = 0;
-          startScanner("user");
+        if (window.Telegram && Telegram.WebApp) {
+          log("Telegram WebApp виявлено. Надсилаю дані...");
+          Telegram.WebApp.sendData(code);
+          Telegram.WebApp.close();
         } else {
-          document.getElementById("result").innerText += " Перевірте, чи камера доступна.";
-          document.getElementById("startButton").style.display = "inline";
+          updateStatus("❌ Telegram WebApp API недоступний", 'error');
+          log("Telegram.WebApp API не знайдено", 'error');
         }
+      } catch (err) {
+        updateStatus("❌ Помилка надсилання коду", 'error');
+        log("SEND ERROR: " + err.message, 'error');
+      }
+    };
+
+    const html5QrCode = new Html5Qrcode("reader");
+    Html5Qrcode.getCameras().then(devices => {
+      if (!devices.length) {
+        updateStatus("❌ Камери не знайдено", 'error');
+        log("CAMERA ERROR: Жодної камери не знайдено", 'error');
         return;
       }
 
-      log("Камера ініціалізована успішно");
-      document.getElementById("result").innerText = "Сканування...";
-      document.getElementById("stopButton").style.display = "inline";
-      scannerRunning = true;
-      retryCount = 0;
+      const cameraId = devices[0].id;
+      log(`Камера обрана: ${devices[0].label || "без назви"}`);
 
-      // Сканування штрих-кодів
-      async function scanBarcode() {
-        if (!scannerRunning) return;
-
-        try {
-          const barcodes = await barcodeDetector.detect(video);
-          if (barcodes.length > 0) {
-            const code = barcodes[0].rawValue;
-            document.getElementById("result").innerText = "Знайдено штрих-код: " + code;
-            log("Знайдено штрих-код:", code);
-
-            if (window.Telegram && window.Telegram.WebApp) {
-              window.Telegram.WebApp.sendData(code);
-              window.Telegram.WebApp.close();
-            } else {
-              navigator.clipboard.writeText(code).then(() => {
-                alert("Штрих-код скопійовано в буфер обміну: " + code);
-              }).catch(() => {
-                alert("Не вдалося скопіювати штрих-код: " + code);
-              });
-            }
-
-            stopScanner();
-          } else {
-            animationFrameId = requestAnimationFrame(scanBarcode);
-          }
-        } catch (err) {
-          log("Помилка сканування:", err);
-          animationFrameId = requestAnimationFrame(scanBarcode);
+      html5QrCode.start(
+        cameraId,
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0
+        },
+        (decodedText, decodedResult) => {
+          log(`✅ Успішне зчитування: ${decodedText}`, 'success');
+          html5QrCode.stop().then(() => {
+            log("Сканування зупинено", 'log');
+            sendCodeToBot(decodedText);
+          }).catch(err => {
+            updateStatus("❌ Не вдалося зупинити сканування", 'error');
+            log("STOP ERROR: " + err.message, 'error');
+          });
+        },
+        (errorMessage) => {
+          log("Спроба зчитування: " + errorMessage, 'warn');
         }
-      }
-
-      scanBarcode();
-    }
-
-    function stopScanner() {
-      if (scannerRunning) {
-        scannerRunning = false;
-        cancelAnimationFrame(animationFrameId);
-        document.getElementById("stopButton").style.display = "none";
-        document.getElementById("startButton").style.display = "inline";
-        document.getElementById("result").innerText = "Сканер зупинено.";
-        document.getElementById("instructions").style.display = "none";
-        log("Сканер зупинено");
-        const video = document.querySelector('#video');
-        if (video.srcObject) {
-          video.srcObject.getTracks().forEach(track => track.stop());
-          video.srcObject = null;
-        }
-      }
-    }
-
-    // Ініціалізація Telegram WebApp
-    if (window.Telegram && window.Telegram.WebApp) {
-      window.Telegram.WebApp.ready();
-      log("Telegram WebApp ініціалізовано");
-      setTimeout(() => {
-        log("Запуск сканера з затримкою...");
-        startScanner();
-      }, 500);
-    } else {
-      window.onload = function() {
-        log("Запуск сканера...");
-        startScanner();
-      };
-    }
+      );
+      updateStatus("✅ Камера активна — наведи на штрих-код", 'success');
+    }).catch(err => {
+      updateStatus("❌ Не вдалося отримати доступ до камери", 'error');
+      log("GETCAMERA ERROR: " + err.message, 'error');
+    });
   </script>
 </body>
 </html>
