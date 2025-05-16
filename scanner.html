@@ -42,12 +42,6 @@
       opacity: 0.7;
       pointer-events: none;
     }
-    #camera-select {
-      margin: 10px auto;
-      padding: 5px;
-      font-size: 1rem;
-      border-radius: 5px;
-    }
     #status {
       color: white;
       position: absolute;
@@ -91,7 +85,6 @@
 </head>
 <body>
   <h1>Сканування штрих-коду</h1>
-  <select id="camera-select"></select>
   <div id="scanner-container">
     <div id="status">Сканування...</div>
     <div id="scanner-overlay"></div>
@@ -101,10 +94,9 @@
   <button id="restart-btn" onclick="restartScanner()">Сканувати ще раз</button>
 
   <script>
-    let currentDeviceId = null;
     let isScanning = false;
 
-    async function startScanner(deviceId) {
+    async function startScanner() {
       if (isScanning) {
         Quagga.stop();
         isScanning = false;
@@ -117,10 +109,20 @@
       document.getElementById('scanner-overlay').style.border = '2px dashed red';
 
       try {
-        // Перевірка доступу до камери
+        // Автоматичний вибір задньої камери
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === "videoinput");
+        let rearCamera = videoDevices.find(device => device.label.toLowerCase().includes("rear") || device.label.toLowerCase().includes("back"));
+        if (!rearCamera && videoDevices.length > 0) {
+          rearCamera = videoDevices[0]; // Якщо задньої камери немає, беремо першу доступну
+        }
+        if (!rearCamera) {
+          throw new Error("Камеру не знайдено");
+        }
+
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            deviceId: deviceId ? { exact: deviceId } : undefined,
+            deviceId: { exact: rearCamera.deviceId },
             width: { min: 640, ideal: 1280, max: 1920 },
             height: { min: 480, ideal: 720, max: 1080 },
             facingMode: { ideal: "environment" }
@@ -133,7 +135,7 @@
             type: "LiveStream",
             target: document.querySelector('#scanner-container'),
             constraints: {
-              deviceId: deviceId ? { exact: deviceId } : undefined,
+              deviceId: { exact: rearCamera.deviceId },
               width: { min: 640, ideal: 1280, max: 1920 },
               height: { min: 480, ideal: 720, max: 1080 },
               facingMode: "environment"
@@ -165,7 +167,6 @@
           const barcode = result.codeResult.code;
           console.log("Виявлено штрих-код:", barcode);
 
-          // Фільтрація результатів
           if (barcode && barcode.length >= 6 && !isNaN(barcode)) {
             Quagga.stop();
             isScanning = false;
@@ -174,8 +175,10 @@
             document.getElementById('restart-btn').style.display = 'block';
             document.getElementById('scanner-overlay').style.border = '2px solid green';
 
-            // Перенаправлення до Telegram
-            window.location.href = `https://t.me/NSGChat_bot?start=${encodeURIComponent(barcode)}`;
+            // Перенаправлення до Telegram із затримкою для стабільності
+            setTimeout(() => {
+              window.location.href = `https://t.me/NSGChat_bot?start=${encodeURIComponent(barcode)}`;
+            }, 500);
           }
         });
 
@@ -191,38 +194,6 @@
       }
     }
 
-    async function populateCameraList() {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === "videoinput");
-        const cameraSelect = document.getElementById("camera-select");
-        cameraSelect.innerHTML = "";
-
-        if (videoDevices.length === 0) {
-          document.getElementById('error').textContent = 'Камери не знайдено';
-          return;
-        }
-
-        videoDevices.forEach((device, index) => {
-          const option = document.createElement("option");
-          option.value = device.deviceId;
-          option.text = device.label || `Камера ${index + 1}`;
-          cameraSelect.appendChild(option);
-        });
-
-        currentDeviceId = videoDevices[0].deviceId;
-        startScanner(currentDeviceId);
-
-        cameraSelect.onchange = () => {
-          currentDeviceId = cameraSelect.value;
-          startScanner(currentDeviceId);
-        };
-      } catch (err) {
-        console.error("Помилка отримання списку камер:", err);
-        document.getElementById('error').textContent = 'Помилка: ' + (err.message || 'Не вдалося отримати список камер');
-      }
-    }
-
     window.addEventListener('load', async () => {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         document.getElementById('error').textContent = 'Цей браузер не підтримує доступ до камери';
@@ -231,7 +202,7 @@
 
       try {
         await navigator.mediaDevices.getUserMedia({ video: true });
-        populateCameraList();
+        startScanner();
       } catch (err) {
         console.error("Доступ до камери заборонено:", err);
         document.getElementById('error').textContent = '❌ Доступ до камери заборонено або не підтримується';
@@ -240,7 +211,7 @@
 
     function restartScanner() {
       if (!isScanning) {
-        startScanner(currentDeviceId);
+        startScanner();
       }
     }
 
