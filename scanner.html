@@ -137,7 +137,6 @@
     let isScanning = false;
     let currentDeviceId = null;
     let availableCameras = [];
-    let isRearCamera = true;
 
     async function startScanner(deviceId = null) {
       if (isScanning) {
@@ -155,21 +154,28 @@
         if (!deviceId && availableCameras.length === 0) {
           const devices = await navigator.mediaDevices.enumerateDevices();
           availableCameras = devices.filter(device => device.kind === "videoinput");
+          console.log("Доступні камери:", availableCameras);
           if (availableCameras.length === 0) throw new Error("Камери не знайдено");
-          // Примусово обираємо задню камеру за замовчуванням
-          currentDeviceId = availableCameras.find(cam => cam.label.toLowerCase().includes("rear") || cam.label.toLowerCase().includes("back"))?.deviceId;
-          if (!currentDeviceId) {
-            // Якщо задньої камери немає, шукаємо першу з facingMode "environment"
-            const rearCandidate = availableCameras.find(cam => {
-              const constraints = { video: { deviceId: { exact: cam.deviceId } } };
-              return navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+
+          // Шукаємо задню камеру
+          let rearCamera = availableCameras.find(cam => cam.label.toLowerCase().includes("rear") || cam.label.toLowerCase().includes("back"));
+          if (!rearCamera) {
+            // Спробуємо знайти камеру з facingMode "environment"
+            for (let cam of availableCameras) {
+              try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                  video: { deviceId: { exact: cam.deviceId }, facingMode: "environment" }
+                });
                 stream.getTracks().forEach(track => track.stop());
-                return true;
-              }).catch(() => false);
-            })?.deviceId;
-            currentDeviceId = rearCandidate || availableCameras[0].deviceId;
-            console.warn("Задню камеру не знайдено за назвою, використано:", currentDeviceId);
+                rearCamera = cam;
+                break;
+              } catch (err) {
+                console.log("Камера не підтримує environment:", cam.deviceId);
+              }
+            }
           }
+          currentDeviceId = rearCamera ? rearCamera.deviceId : availableCameras[0].deviceId;
+          console.log("Обрана камера:", currentDeviceId);
         } else if (deviceId) {
           currentDeviceId = deviceId;
         }
@@ -179,7 +185,7 @@
             deviceId: currentDeviceId ? { exact: currentDeviceId } : undefined,
             width: { min: 640, ideal: 1280, max: 1920 },
             height: { min: 480, ideal: 720, max: 1080 },
-            facingMode: "environment" // Примусово задня камера
+            facingMode: "environment"
           }
         });
 
@@ -220,21 +226,15 @@
 
         Quagga.onDetected(function(result) {
           const barcode = result.codeResult.code;
-          console.log("Виявлено код:", barcode, "Тип декодера:", result.codeResult.decoder);
+          console.log("Виявлено код:", barcode, "Декодер:", result.codeResult.decoder, "Довжина:", barcode.length);
 
-          // Виправлена фільтрація: приймаємо лише валідні штрих-коди
-          const validLengths = {
-            "ean_reader": [13, 8],
-            "ean_8_reader": [8],
-            "code_128_reader": [6, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
-            "upc_reader": [12],
-            "upc_e_reader": [6, 7, 8]
-          };
+          // Спрощена фільтрація: лише довжина та тип декодера
           const decoder = result.codeResult.decoder;
-          const lengthValid = validLengths[decoder] ? validLengths[decoder].includes(barcode.length) : false;
-          const isNumeric = /^\d+$/.test(barcode);
+          const validDecoders = ["ean_reader", "ean_8_reader", "code_128_reader", "upc_reader", "upc_e_reader"];
+          const minLength = decoder === "code_128_reader" ? 6 : 6; // Code 128 може бути коротшим
+          const maxLength = 20; // Обмеження для всіх типів
 
-          if (barcode && isNumeric && lengthValid) {
+          if (barcode && validDecoders.includes(decoder) && barcode.length >= minLength && barcode.length <= maxLength) {
             Quagga.stop();
             isScanning = false;
             document.getElementById('status').textContent = 'Сканування завершено';
@@ -247,7 +247,7 @@
               window.close();
             }, 500);
           } else {
-            console.warn("Недійсний штрих-код:", barcode, "Довжина:", barcode.length, "Декодер:", decoder);
+            console.warn("Недійсний штрих-код:", barcode, "Декодер:", decoder, "Довжина:", barcode.length);
             document.getElementById('status').textContent = 'Сканування... (Недійсний код)';
             document.getElementById('scanner-overlay').style.border = '3px dashed red';
           }
