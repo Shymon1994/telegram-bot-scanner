@@ -156,7 +156,13 @@
           const devices = await navigator.mediaDevices.enumerateDevices();
           availableCameras = devices.filter(device => device.kind === "videoinput");
           if (availableCameras.length === 0) throw new Error("Камери не знайдено");
-          currentDeviceId = availableCameras.find(cam => cam.label.toLowerCase().includes("rear") || cam.label.toLowerCase().includes("back"))?.deviceId || availableCameras[0].deviceId;
+          // Примусово обираємо задню камеру
+          currentDeviceId = availableCameras.find(cam => cam.label.toLowerCase().includes("rear") || cam.label.toLowerCase().includes("back"))?.deviceId;
+          if (!currentDeviceId && availableCameras.length > 0) {
+            currentDeviceId = availableCameras[0].deviceId; // Якщо задньої немає, беремо першу
+            console.warn("Задню камеру не знайдено, використано першу доступну:", currentDeviceId);
+          }
+          if (!currentDeviceId) throw new Error("Камеру не знайдено");
         } else if (deviceId) {
           currentDeviceId = deviceId;
         }
@@ -183,7 +189,7 @@
             }
           },
           decoder: {
-            readers: ["ean_reader", "ean_8_reader", "code_128_reader", "upc_reader", "upc_e_reader", "code_39_reader", "code_93_reader", "codabar_reader"],
+            readers: ["ean_reader", "ean_8_reader", "code_128_reader", "upc_reader", "upc_e_reader"],
             multiple: false
           },
           locator: {
@@ -203,30 +209,30 @@
           console.log("Quagga ініціалізовано з пристроєм:", currentDeviceId);
           Quagga.start();
           isScanning = true;
-          speak("Сканування розпочато. Тримайте штрих-код у рамці.");
         });
 
         Quagga.onDetected(function(result) {
           const barcode = result.codeResult.code;
-          console.log("Виявлено штрих-код:", barcode);
+          console.log("Виявлено код:", barcode);
 
-          if (barcode && barcode.length >= 6 && !isNaN(barcode)) {
+          // Суворіша фільтрація: лише штрих-коди з типом EAN, UPC або Code 128
+          const validReaders = ["ean_reader", "ean_8_reader", "code_128_reader", "upc_reader", "upc_e_reader"];
+          if (barcode && barcode.length >= 6 && !isNaN(barcode) && validReaders.includes(result.codeResult.decoder)) {
             Quagga.stop();
             isScanning = false;
             document.getElementById('status').textContent = 'Сканування завершено';
             document.getElementById('barcode').textContent = barcode;
             document.getElementById('scanner-overlay').style.border = '3px solid green';
             document.getElementById('restart-btn').style.display = 'inline-block';
-            speak(`Виявлено код: ${barcode}. Перенаправлення до Telegram.`);
 
-            // Зберігаємо код локально
-            localStorage.setItem('lastBarcode', barcode);
-
-            // Перенаправлення до Telegram із закриттям сторінки
             setTimeout(() => {
               window.location.href = `https://t.me/NSGChat_bot?start=${encodeURIComponent(barcode)}`;
-              window.close(); // Спроба закрити вкладку
+              window.close();
             }, 500);
+          } else {
+            console.warn("Недійсний штрих-код або невідомий формат:", barcode, result.codeResult.decoder);
+            document.getElementById('status').textContent = 'Сканування... (Недійсний код)';
+            document.getElementById('scanner-overlay').style.border = '3px dashed red';
           }
         });
 
@@ -248,19 +254,12 @@
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'uk-UA';
         window.speechSynthesis.speak(utterance);
-      } else {
-        console.warn("Голосові підказки не підтримуються цим браузером.");
       }
     }
 
-    // Експериментальна AR-подібна функція (потрібен WebXR API)
     function initAROverlay() {
       if ('xr' in navigator) {
         console.log("WebXR доступний, ініціалізація AR...");
-        // Поки що лише логіка, повноцінна реалізація потребує додаткових бібліотек (наприклад, Three.js)
-        document.getElementById('scanner-overlay').innerHTML += '<div style="color: white; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">AR: Спроба запуску</div>';
-      } else {
-        console.warn("WebXR не підтримується.");
       }
     }
 
@@ -274,7 +273,7 @@
       try {
         await navigator.mediaDevices.getUserMedia({ video: true });
         startScanner();
-        initAROverlay(); // Експериментальна функція
+        initAROverlay();
       } catch (err) {
         console.error("Доступ до камери заборонено:", err);
         document.getElementById('error').textContent = '❌ Доступ до камери заборонено або не підтримується';
@@ -293,7 +292,6 @@
         currentDeviceId = availableCameras[nextIndex].deviceId;
         isRearCamera = availableCameras[nextIndex].label.toLowerCase().includes("rear") || availableCameras[nextIndex].label.toLowerCase().includes("back");
         startScanner(currentDeviceId);
-        speak("Переключено камеру.");
       } else {
         document.getElementById('error').textContent = 'Тільки одна камера доступна';
         document.getElementById('error').style.display = 'block';
@@ -303,7 +301,6 @@
     window.onbeforeunload = function() {
       if (isScanning) {
         Quagga.stop();
-        localStorage.removeItem('lastBarcode'); // Очищаємо при закритті
       }
     };
   </script>
