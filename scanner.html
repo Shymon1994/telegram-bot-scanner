@@ -1,166 +1,44 @@
-```html
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Сканер штрих-кодів</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background-color: #1a1a1a;
-            color: #ffffff;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-        }
-        #reader {
-            width: 100%;
-            max-width: 400px;
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
-        }
-        button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            margin: 10px;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-        #result {
-            margin-top: 20px;
-            font-size: 18px;
-            text-align: center;
-            word-wrap: break-word;
-        }
-        .log {
-            background-color: #2a2a2a;
-            padding: 10px;
-            margin-top: 20px;
-            border-radius: 5px;
-            max-height: 100px;
-            overflow-y: auto;
-            width: 100%;
-            max-width: 400px;
-        }
-        .animation {
-            animation: fadeIn 0.5s ease-in;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-    </style>
+    <title>Штрих-код сканер</title>
+    <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
 </head>
 <body>
-    <h2>Сканер штрих-кодів</h2>
-    <div id="reader"></div>
-    <button onclick="startScanner()">Почати сканування</button>
-    <button onclick="stopScanner()" style="display: none;" id="stopButton">Зупинити сканер</button>
-    <button onclick="startScanner()" style="display: none;" id="retryButton">Повторити сканування</button>
-    <div id="result"></div>
-    <div class="log" id="log"></div>
+    <h1>Сканування штрих-коду</h1>
+    <video id="scanner" width="100%" height="100%"></video>
+    <p>Товар з кодом: <span id="barcode"></span></p>
 
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" onerror="onLibraryLoadError()"></script>
     <script>
-        let html5QrcodeScanner = null;
-
-        function log(...args) {
-            const logElement = document.getElementById("log");
-            logElement.innerHTML += args.join(" ") + "<br>";
-            logElement.scrollTop = logElement.scrollHeight;
-            console.log(...args);
-        }
-
-        function onLibraryLoadError() {
-            document.getElementById("result").innerText = "Помилка завантаження бібліотеки. Перевірте підключення до Інтернету.";
-            log("Помилка: html5-qrcode.min.js не завантажено.");
-        }
-
-        function startScanner() {
-            document.getElementById("result").innerText = "";
-            document.getElementById("stopButton").style.display = "inline-block";
-            document.getElementById("retryButton").style.display = "none";
-
-            html5QrcodeScanner = new Html5QrcodeScanner(
-                "reader",
-                {
-                    fps: 10,
-                    qrbox: { width: 250, height: 250 },
-                    formatsToSupport: [
-                        Html5QrcodeSupportedFormats.EAN_13,
-                        Html5QrcodeSupportedFormats.UPC_A,
-                        Html5QrcodeSupportedFormats.CODE_128,
-                        Html5QrcodeSupportedFormats.QR_CODE
-                    ]
-                },
-                false
-            );
-
-            html5QrcodeScanner.render(
-                (decodedText, decodedResult) => {
-                    document.getElementById("result").innerText = `Знайдено штрих-код: ${decodedText}`;
-                    document.getElementById("result").classList.add("animation");
-                    log("Знайдено штрих-код:", decodedText, decodedResult);
-
-                    try {
-                        window.Telegram.WebApp.sendData(decodedText);
-                        window.Telegram.WebApp.close();
-                        log("Дані відправлено в Telegram:", decodedText);
-                    } catch (err) {
-                        log("Помилка відправки даних:", err);
-                        document.getElementById("result").innerText += `\nПомилка: ${err.message}`;
-                    }
-
-                    stopScanner();
-                    document.getElementById("retryButton").style.display = "inline-block";
-                },
-                (error) => {
-                    log("Помилка сканування:", error);
-                }
-            );
-
-            Html5Qrcode.getCameras().then(cameras => {
-                if (cameras && cameras.length) {
-                    log("Доступні камери:", cameras);
-                } else {
-                    document.getElementById("result").innerText = "Камери не знайдено.";
-                    log("Камери не знайдено.");
-                }
-            }).catch(err => {
-                document.getElementById("result").innerText = `Помилка доступу до камери: ${err}`;
-                log("Помилка доступу до камери:", err);
-            });
-        }
-
-        function stopScanner() {
-            if (html5QrcodeScanner) {
-                html5QrcodeScanner.clear();
-                document.getElementById("stopButton").style.display = "none";
-                log("Сканер зупинено.");
+        // Запуск камери для сканування
+        Quagga.init({
+            inputStream: {
+                name: "Live",
+                type: "LiveStream",
+                target: document.querySelector('#scanner')    // Відео елемент для камери
+            },
+            decoder: {
+                readers: ["code_128_reader", "ean_reader", "ean_8_reader", "upc_reader"]  // Підтримувані формати штрих-кодів
             }
-        }
-
-        window.onload = function() {
-            if (!window.Telegram || !window.Telegram.WebApp) {
-                document.getElementById("result").innerText = "Telegram WebApp API недоступний.";
-                log("Помилка: Telegram WebApp API недоступний.");
-            } else {
-                window.Telegram.WebApp.ready();
-                log("Telegram WebApp API ініціалізовано.");
+        }, function(err) {
+            if (err) {
+                console.error(err);
+                return;
             }
-        };
+            Quagga.start();  // Почати сканування
+        });
+
+        // Слухач на отримання результатів сканування
+        Quagga.onDetected(function(result) {
+            const barcode = result.codeResult.code;
+            document.getElementById('barcode').textContent = barcode;
+
+            // Відправити штрих-код в Telegram-бот
+            // Тут ти можеш інтегрувати відправку через API, щоб бот отримав цей штрих-код
+            window.location.href = `https://t.me/your_bot_username?start=${barcode}`;
+        });
     </script>
 </body>
 </html>
-```
