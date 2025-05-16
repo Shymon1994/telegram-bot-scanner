@@ -1,43 +1,66 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="uk">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Штрих-код сканер</title>
+    <title>Сканер штрих-коду</title>
     <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: sans-serif;
+            text-align: center;
+            background-color: #f4f4f4;
+        }
+        #scanner {
+            width: 100%;
+            height: 100vh;
+            object-fit: cover;
+            background: black;
+        }
+        #barcode {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+    </style>
 </head>
 <body>
     <h1>Сканування штрих-коду</h1>
-    <video id="scanner" width="100%" height="100%"></video>
+    <video id="scanner"></video>
     <p>Товар з кодом: <span id="barcode"></span></p>
 
     <script>
-        // Запуск камери для сканування
         Quagga.init({
             inputStream: {
                 name: "Live",
                 type: "LiveStream",
-                target: document.querySelector('#scanner')    // Відео елемент для камери
+                target: document.querySelector('#scanner'),
+                constraints: {
+                    facingMode: "environment" // Використовує задню камеру
+                }
+            },
+            locator: {
+                patchSize: "medium",
+                halfSample: true
             },
             decoder: {
-                readers: ["code_128_reader", "ean_reader", "ean_8_reader", "upc_reader"]  // Підтримувані формати штрих-кодів
-            }
+                readers: ["ean_reader", "ean_8_reader", "code_128_reader", "upc_reader"]
+            },
+            locate: true
         }, function(err) {
             if (err) {
-                console.error(err);
+                console.error("Quagga init error:", err);
                 return;
             }
-            Quagga.start();  // Почати сканування
+            Quagga.start();
         });
 
-        // Слухач на отримання результатів сканування
         Quagga.onDetected(function(result) {
             const barcode = result.codeResult.code;
-            document.getElementById('barcode').textContent = barcode;
-
-            // Відправити штрих-код в Telegram-бот
-            // Тут ти можеш інтегрувати відправку через API, щоб бот отримав цей штрих-код
-            window.location.href = `https://t.me/your_bot_username?start=${barcode}`;
+            document.getElementById("barcode").textContent = barcode;
+            // Перехід до Telegram бота
+            window.location.href = `https://t.me/NSGChat_bot?start=${barcode}`;
         });
     </script>
 </body>
