@@ -45,6 +45,14 @@
             border-radius: 4px;
             font-size: 14px;
         }
+        #camera-select {
+            margin: 10px auto;
+            padding: 8px;
+            font-size: 14px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            max-width: 300px;
+        }
         #barcode {
             font-size: 1.2em;
             font-weight: 600;
@@ -79,11 +87,17 @@
             h1 {
                 font-size: 1.3em;
             }
+            #camera-select {
+                width: 90%;
+            }
         }
     </style>
 </head>
 <body>
     <h1>Сканування штрих-коду</h1>
+    <select id="camera-select" disabled>
+        <option value="">Завантаження камер...</option>
+    </select>
     <div id="scanner-container">
         <video id="scanner"></video>
         <div id="status">Ініціалізація...</div>
@@ -94,6 +108,8 @@
 
     <script>
         let isScanning = false;
+        let selectedDeviceId = null;
+        let videoDevices = [];
 
         function showError(message) {
             const errorDiv = document.getElementById('error-message');
@@ -114,7 +130,8 @@
                     type: "LiveStream",
                     target: document.querySelector('#scanner'),
                     constraints: {
-                        facingMode: "environment",
+                        deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+                        facingMode: selectedDeviceId ? undefined : "environment",
                         width: { ideal: 1280 },
                         height: { ideal: 720 }
                     }
@@ -191,6 +208,41 @@
             }
         });
 
+        // Отримання списку камер
+        async function populateCameraSelect() {
+            const select = document.getElementById('camera-select');
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                videoDevices = devices.filter(device => device.kind === 'videoinput');
+                
+                // Очищаємо селектор
+                select.innerHTML = '';
+                
+                if (videoDevices.length === 0) {
+                    showError('Не знайдено жодної камери. Перевірте підключення камери.');
+                    select.disabled = true;
+                    return;
+                }
+
+                // Додаємо опції для кожної камери
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Камера ${index + 1}`;
+                    select.appendChild(option);
+                });
+
+                select.disabled = false;
+                selectedDeviceId = select.value || null;
+
+                // Ініціалізуємо Quagga з вибраною камерою
+                initQuagga();
+            } catch (err) {
+                showError(`Помилка отримання списку камер: ${err.message}`);
+                console.error("Error enumerating devices:", err);
+            }
+        }
+
         // Перевірка дозволів камери
         async function checkCameraPermission() {
             try {
@@ -207,7 +259,7 @@
             }
         }
 
-        // Спроба доступу до камери
+        // Спроба доступу до камери та ініціалізація
         async function initCamera() {
             const hasPermission = await checkCameraPermission();
             if (!hasPermission) return;
@@ -216,8 +268,8 @@
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: "environment" }
                 });
-                // Якщо доступ до камери отримано, ініціалізуємо Quagga
-                initQuagga();
+                // Заповнюємо список камер після отримання доступу
+                await populateCameraSelect();
             } catch (err) {
                 let errorMessage = 'Не вдалося отримати доступ до камери: ';
                 if (err.name === 'NotAllowedError') {
@@ -232,6 +284,15 @@
                 console.error("Camera access error:", err);
             }
         }
+
+        // Зміна камери при виборі
+        document.getElementById('camera-select').addEventListener('change', (event) => {
+            selectedDeviceId = event.target.value;
+            if (isScanning) {
+                Quagga.stop();
+            }
+            initQuagga();
+        });
 
         // Запускаємо ініціалізацію
         initCamera();
