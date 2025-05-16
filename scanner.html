@@ -36,6 +36,15 @@
             border-radius: 4px;
             font-size: 14px;
         }
+        #error-message {
+            display: none;
+            color: #d32f2f;
+            background: #ffebee;
+            padding: 10px;
+            margin: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
         #barcode {
             font-size: 1.2em;
             font-weight: 600;
@@ -77,13 +86,26 @@
     <h1>Сканування штрих-коду</h1>
     <div id="scanner-container">
         <video id="scanner"></video>
-        <div id="status">Сканування...</div>
+        <div id="status">Ініціалізація...</div>
     </div>
+    <div id="error-message"></div>
     <p>Товар з кодом: <span id="barcode">Очікування сканування</span></p>
     <button id="restart-btn">Сканувати ще раз</button>
 
     <script>
         let isScanning = false;
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function clearError() {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = '';
+            errorDiv.style.display = 'none';
+        }
 
         function initQuagga() {
             Quagga.init({
@@ -118,7 +140,8 @@
                 frequency: 10
             }, function(err) {
                 if (err) {
-                    document.getElementById('status').textContent = 'Помилка: ' + err.message;
+                    showError(`Помилка ініціалізації сканера: ${err.message}. Перевірте, чи не заблоковано доступ до камери.`);
+                    document.getElementById('status').textContent = 'Помилка';
                     console.error("Quagga init error:", err);
                     return;
                 }
@@ -131,6 +154,7 @@
             Quagga.start();
             document.getElementById('status').textContent = 'Сканування...';
             document.getElementById('restart-btn').style.display = 'none';
+            clearError();
         }
 
         function stopScanning() {
@@ -149,7 +173,6 @@
                 document.getElementById('status').textContent = 'Штрих-код виявлено!';
                 stopScanning();
 
-                // Перехід до Telegram бота після короткої затримки
                 setTimeout(() => {
                     window.location.href = `https://t.me/NSGChat_bot?start=${encodeURIComponent(barcode)}`;
                 }, 1000);
@@ -168,13 +191,50 @@
             }
         });
 
-        // Обробка помилок доступу до камери
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-            .then(() => initQuagga())
-            .catch(err => {
-                document.getElementById('status').textContent = 'Помилка доступу до камери: ' + err.message;
+        // Перевірка дозволів камери
+        async function checkCameraPermission() {
+            try {
+                const permissionStatus = await navigator.permissions.query({ name: 'camera' });
+                if (permissionStatus.state === 'denied') {
+                    showError('Доступ до камери заблоковано. Будь ласка, дозвольте доступ до камери в налаштуваннях браузера.');
+                    document.getElementById('status').textContent = 'Немає доступу до камери';
+                    return false;
+                }
+                return true;
+            } catch (err) {
+                console.warn("Permission API not supported:", err);
+                return true; // Продовжуємо, якщо API дозволів не підтримується
+            }
+        }
+
+        // Спроба доступу до камери
+        async function initCamera() {
+            const hasPermission = await checkCameraPermission();
+            if (!hasPermission) return;
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" }
+                });
+                // Якщо доступ до камери отримано, ініціалізуємо Quagga
+                initQuagga();
+            } catch (err) {
+                let errorMessage = 'Не вдалося отримати доступ до камери: ';
+                if (err.name === 'NotAllowedError') {
+                    errorMessage += 'доступ до камери заблоковано. Дозвольте доступ у налаштуваннях браузера.';
+                } else if (err.name === 'NotFoundError') {
+                    errorMessage += 'камера не знайдена. Перевірте, чи підключена камера.';
+                } else {
+                    errorMessage += err.message;
+                }
+                showError(errorMessage);
+                document.getElementById('status').textContent = 'Помилка камери';
                 console.error("Camera access error:", err);
-            });
+            }
+        }
+
+        // Запускаємо ініціалізацію
+        initCamera();
 
         // Зупинка сканування при закритті сторінки
         window.addEventListener('beforeunload', () => {
