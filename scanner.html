@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="uk">
 <head>
@@ -20,11 +19,6 @@
       background: black;
       position: relative;
     }
-    #camera-select {
-      margin: 10px auto;
-      padding: 5px;
-      font-size: 1rem;
-    }
     #status {
       color: white;
       position: absolute;
@@ -45,7 +39,6 @@
 </head>
 <body>
   <h1>Сканування штрих-коду</h1>
-  <select id="camera-select"></select>
   <div id="scanner-container">
     <div id="status">Сканування...</div>
   </div>
@@ -54,9 +47,40 @@
   <script>
     let currentDeviceId = null;
 
-    async function startScanner(deviceId) {
+    async function startScanner(deviceId = null) {
       if (Quagga.initialized) {
         Quagga.stop();
+      }
+
+      // Автоматичний вибір задньої камери
+      if (!deviceId && !currentDeviceId) {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === "videoinput");
+        console.log("Доступні камери:", videoDevices);
+        if (videoDevices.length === 0) {
+          alert("Камери не знайдено");
+          return;
+        }
+        let rearCamera = videoDevices.find(cam => cam.label.toLowerCase().includes("rear") || cam.label.toLowerCase().includes("back"));
+        if (!rearCamera) {
+          // Спроба знайти камеру з facingMode "environment"
+          for (let cam of videoDevices) {
+            try {
+              const stream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: cam.deviceId }, facingMode: "environment" }
+              });
+              stream.getTracks().forEach(track => track.stop());
+              rearCamera = cam;
+              break;
+            } catch (err) {
+              console.log("Камера не підтримує environment:", cam.deviceId);
+            }
+          }
+        }
+        currentDeviceId = rearCamera ? rearCamera.deviceId : videoDevices[0].deviceId;
+        console.log("Обрана камера:", currentDeviceId);
+      } else if (deviceId) {
+        currentDeviceId = deviceId;
       }
 
       Quagga.init({
@@ -65,7 +89,8 @@
           type: "LiveStream",
           target: document.querySelector('#scanner-container'),
           constraints: {
-            deviceId: deviceId ? { exact: deviceId } : undefined
+            deviceId: currentDeviceId ? { exact: currentDeviceId } : undefined,
+            facingMode: "environment"
           }
         },
         decoder: {
@@ -84,34 +109,24 @@
 
       Quagga.onDetected(function(result) {
         const barcode = result.codeResult.code;
-        document.getElementById("barcode").textContent = barcode;
-        Quagga.stop();
-        window.location.href = `https://t.me/NSGChat_bot?start=${barcode}`;
+        console.log("Виявлено код:", barcode, "Декодер:", result.codeResult.decoder, "Довжина:", barcode.length);
+
+        // Спрощена фільтрація: приймаємо всі коди від підтримуваних декодерів
+        const validDecoders = ["ean_reader", "ean_8_reader", "code_128_reader", "upc_reader"];
+        if (barcode && validDecoders.includes(result.codeResult.decoder) && barcode.length >= 6) {
+          document.getElementById("barcode").textContent = barcode;
+          Quagga.stop();
+
+          // Перенаправлення з закриттям сторінки
+          setTimeout(() => {
+            window.location.href = `https://t.me/NSGChat_bot?start=${encodeURIComponent(barcode)}`;
+            window.close();
+          }, 500);
+        } else {
+          console.warn("Недійсний штрих-код:", barcode, "Декодер:", result.codeResult.decoder);
+          document.getElementById('status').textContent = 'Сканування... (Недійсний код)';
+        }
       });
-    }
-
-    async function populateCameraList() {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === "videoinput");
-      const cameraSelect = document.getElementById("camera-select");
-      cameraSelect.innerHTML = "";
-
-      videoDevices.forEach((device, index) => {
-        const option = document.createElement("option");
-        option.value = device.deviceId;
-        option.text = device.label || `Камера ${index + 1}`;
-        cameraSelect.appendChild(option);
-      });
-
-      if (videoDevices.length > 0) {
-        currentDeviceId = videoDevices[0].deviceId;
-        startScanner(currentDeviceId);
-      }
-
-      cameraSelect.onchange = () => {
-        currentDeviceId = cameraSelect.value;
-        startScanner(currentDeviceId);
-      };
     }
 
     window.addEventListener('load', async () => {
@@ -122,7 +137,7 @@
 
       try {
         await navigator.mediaDevices.getUserMedia({ video: true });
-        populateCameraList();
+        startScanner();
       } catch (err) {
         console.error("Доступ до камери заборонено:", err);
         alert("❌ Доступ до камери заборонено або не підтримується цим пристроєм.");
