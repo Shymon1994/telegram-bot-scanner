@@ -56,7 +56,7 @@
       if (!deviceId && !currentDeviceId) {
         const devices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = devices.filter(device => device.kind === "videoinput");
-        console.log("Доступні камери:", videoDevices);
+        console.log("Доступні камери:", videoDevices.map(cam => ({ id: cam.deviceId, label: cam.label })));
         if (videoDevices.length === 0) {
           alert("Камери не знайдено");
           return;
@@ -71,6 +71,7 @@
               });
               stream.getTracks().forEach(track => track.stop());
               rearCamera = cam;
+              console.log("Знайдено задню камеру:", cam.deviceId);
               break;
             } catch (err) {
               console.log("Камера не підтримує environment:", cam.deviceId);
@@ -90,7 +91,7 @@
           target: document.querySelector('#scanner-container'),
           constraints: {
             deviceId: currentDeviceId ? { exact: currentDeviceId } : undefined,
-            facingMode: "environment"
+            facingMode: "environment" // Примусово задня камера
           }
         },
         decoder: {
@@ -109,11 +110,12 @@
 
       Quagga.onDetected(function(result) {
         const barcode = result.codeResult.code;
-        console.log("Виявлено код:", barcode, "Декодер:", result.codeResult.decoder, "Довжина:", barcode.length);
+        const decoder = result.codeResult.decoder;
+        console.log("Виявлено код:", barcode, "Декодер:", decoder, "Довжина:", barcode.length);
 
-        // Спрощена фільтрація: приймаємо всі коди від підтримуваних декодерів
+        // Спрощена фільтрація: приймаємо всі коди від валідних декодерів
         const validDecoders = ["ean_reader", "ean_8_reader", "code_128_reader", "upc_reader"];
-        if (barcode && validDecoders.includes(result.codeResult.decoder) && barcode.length >= 6) {
+        if (barcode && validDecoders.includes(decoder)) {
           document.getElementById("barcode").textContent = barcode;
           Quagga.stop();
 
@@ -123,7 +125,7 @@
             window.close();
           }, 500);
         } else {
-          console.warn("Недійсний штрих-код:", barcode, "Декодер:", result.codeResult.decoder);
+          console.warn("Недійсний штрих-код:", barcode, "Декодер:", decoder);
           document.getElementById('status').textContent = 'Сканування... (Недійсний код)';
         }
       });
