@@ -84,12 +84,13 @@
       Quagga.onDetected(function(result) {
         const barcode = result.codeResult.code;
         document.getElementById("barcode").textContent = barcode;
-        Quagga.stop();
+        document.getElementById("status").textContent = "Сканування завершено! Повернення до Telegram...";
+        Quagga.stop(); // Зупиняємо сканер
         window.location.href = `https://t.me/NSGChat_bot?start=${barcode}`;
-        // Закриття вкладки після затримки
+        // Перенаправлення на сторінку завершення після затримки
         setTimeout(() => {
-          window.close();
-        }, 1000); // Затримка 1 секунда для обробки Telegram URL
+          window.location.href = "https://shymon1994.github.io/telegram-bot-scanner/closed.html";
+        }, 1500); // Затримка 1.5 секунди для обробки Telegram URL
       });
     }
 
