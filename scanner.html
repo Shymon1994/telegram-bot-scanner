@@ -105,12 +105,15 @@
       Quagga.onDetected(function(result) {
         const barcode = result.codeResult.code;
         document.getElementById("barcode").textContent = barcode;
-        document.getElementById("status").textContent = "Сканування завершено!";
+        document.getElementById("status").textContent = "Штрих-код надіслано до Telegram!";
         Quagga.stop();
-        // Відправка штрих-коду до Telegram
-        window.location.href = `https://t.me/NSGChat_bot?start=${barcode}`;
-        // Показуємо кнопки для подальших дій
+        window.location.href = `tg://resolve?domain=NSGChat_bot&start=${barcode}`;
         document.getElementById("buttons").style.display = "block";
+        setTimeout(() => {
+          if (document.getElementById("status").textContent === "Штрих-код надіслано до Telegram!") {
+            restartScanner();
+          }
+        }, 3000);
       });
     }
 
