@@ -29,6 +29,9 @@
       position: absolute;
       top: 10px;
       left: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 5px;
+      border-radius: 3px;
     }
     #barcode {
       font-size: 1.5rem;
@@ -55,6 +58,12 @@
     .button:hover {
       background-color: #0056b3;
     }
+    #notification {
+      display: none;
+      color: green;
+      font-weight: bold;
+      margin: 10px;
+    }
   </style>
 </head>
 <body>
@@ -64,6 +73,7 @@
     <div id="status">Сканування...</div>
   </div>
   <p>Товар з кодом: <span id="barcode">Очікування сканування</span></p>
+  <div id="notification"></div>
   <div id="buttons" style="display: none;">
     <button class="button" onclick="restartScanner()">Сканувати ще раз</button>
     <a class="button" href="https://t.me/NSGChat_bot">Повернутися до Telegram</a>
@@ -100,17 +110,23 @@
         Quagga.start();
         document.getElementById("status").textContent = "Сканування...";
         document.getElementById("buttons").style.display = "none";
+        document.getElementById("notification").style.display = "none";
       });
 
       Quagga.onDetected(function(result) {
         const barcode = result.codeResult.code;
         document.getElementById("barcode").textContent = barcode;
         document.getElementById("status").textContent = "Штрих-код надіслано до Telegram!";
+        document.getElementById("notification").textContent = "Штрих-код відправлено! Очікуйте відповідь у Telegram.";
+        document.getElementById("notification").style.display = "block";
         Quagga.stop();
-        window.location.href = `tg://resolve?domain=NSGChat_bot&start=${barcode}`;
+        // Спроба перенаправлення до Telegram
+        window.location.href = `https://t.me/NSGChat_bot?start=${barcode}`;
         document.getElementById("buttons").style.display = "block";
+        // Автоматичний перезапуск через 3 секунди
         setTimeout(() => {
-          if (document.getElementById("status").textContent === "Штрих-код надіслано до Telegram!") {
+          const statusText = document.getElementById("status").textContent;
+          if (statusText === "Штрих-код надіслано до Telegram!") {
             restartScanner();
           }
         }, 3000);
@@ -119,6 +135,8 @@
 
     function restartScanner() {
       document.getElementById("barcode").textContent = "Очікування сканування";
+      document.getElementById("notification").textContent = "";
+      document.getElementById("notification").style.display = "none";
       startScanner(currentDeviceId);
     }
 
