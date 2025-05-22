@@ -40,6 +40,21 @@
       border-radius: 8px;
       box-shadow: 0 2px 5px rgba(0,0,0,0.3);
     }
+    .button {
+      display: inline-block;
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 1rem;
+      color: white;
+      background-color: #007bff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .button:hover {
+      background-color: #0056b3;
+    }
   </style>
 </head>
 <body>
@@ -49,6 +64,10 @@
     <div id="status">Сканування...</div>
   </div>
   <p>Товар з кодом: <span id="barcode">Очікування сканування</span></p>
+  <div id="buttons" style="display: none;">
+    <button class="button" onclick="restartScanner()">Сканувати ще раз</button>
+    <a class="button" href="https://t.me/NSGChat_bot">Повернутися до Telegram</a>
+  </div>
 
   <script>
     let currentDeviceId = null;
@@ -79,19 +98,25 @@
         }
         Quagga.initialized = true;
         Quagga.start();
+        document.getElementById("status").textContent = "Сканування...";
+        document.getElementById("buttons").style.display = "none";
       });
 
       Quagga.onDetected(function(result) {
         const barcode = result.codeResult.code;
         document.getElementById("barcode").textContent = barcode;
-        document.getElementById("status").textContent = "Сканування завершено! Повернення до Telegram...";
-        Quagga.stop(); // Зупиняємо сканер
+        document.getElementById("status").textContent = "Сканування завершено!";
+        Quagga.stop();
+        // Відправка штрих-коду до Telegram
         window.location.href = `https://t.me/NSGChat_bot?start=${barcode}`;
-        // Перенаправлення на сторінку завершення після затримки
-        setTimeout(() => {
-          window.location.href = "https://shymon1994.github.io/telegram-bot-scanner/closed.html";
-        }, 1500); // Затримка 1.5 секунди для обробки Telegram URL
+        // Показуємо кнопки для подальших дій
+        document.getElementById("buttons").style.display = "block";
       });
+    }
+
+    function restartScanner() {
+      document.getElementById("barcode").textContent = "Очікування сканування";
+      startScanner(currentDeviceId);
     }
 
     async function populateCameraList() {
