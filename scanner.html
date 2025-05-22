@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="uk">
 <head>
@@ -75,7 +74,7 @@
       }, function(err) {
         if (err) {
           console.error("Quagga init error:", err);
-          alert("Помилка ініціалізації сканера. Перевір дозвіл на камеру або перезавантаж сторінку.");
+          alert("Помилка ініціалізації сканера. Перевірте дозвіл на камеру або перезавантажте сторінку.");
           return;
         }
         Quagga.initialized = true;
@@ -87,6 +86,10 @@
         document.getElementById("barcode").textContent = barcode;
         Quagga.stop();
         window.location.href = `https://t.me/NSGChat_bot?start=${barcode}`;
+        // Закриття вкладки після затримки
+        setTimeout(() => {
+          window.close();
+        }, 1000); // Затримка 1 секунда для обробки Telegram URL
       });
     }
 
