@@ -18,7 +18,6 @@
       height: 60vh;
       background: black;
       position: relative;
-      overflow: hidden;
     }
     #status {
       color: white;
@@ -28,7 +27,6 @@
       background: rgba(0, 0, 0, 0.7);
       padding: 5px;
       border-radius: 3px;
-      font-size: 1rem;
     }
     #barcode {
       font-size: 1.5rem;
@@ -50,7 +48,6 @@
       border: none;
       border-radius: 5px;
       cursor: pointer;
-      text-decoration: none;
     }
     .button:hover {
       background-color: #0056b3;
@@ -60,13 +57,6 @@
       color: green;
       font-weight: bold;
       margin: 10px;
-    }
-    .flash {
-      animation: flash 0.3s ease-in-out;
-    }
-    @keyframes flash {
-      0% { background-color: #00ff00; }
-      100% { background-color: transparent; }
     }
   </style>
 </head>
@@ -83,32 +73,21 @@
   </div>
 
   <script>
-    const MSG = {
-      scanning: "Сканування...",
-      sent: "Штрих-код надіслано до Telegram!",
-      noResult: "Не вдалося розпізнати штрих-код. Спробуйте ще раз.",
-      sentToTelegram: "Штрих-код відправлено! Очікуйте відповідь у Telegram.",
-      waiting: "Очікування сканування"
-    };
-
     let lastCode = null;
     let lastTime = 0;
     let timeoutHandle = null;
     let currentBarcode = null;
+    let detectedOnce = false;
 
     async function startScanner() {
-      if (Quagga.initialized) {
-        Quagga.stop();
-      }
+      if (Quagga.initialized) Quagga.stop();
 
       Quagga.init({
         inputStream: {
           name: "Live",
           type: "LiveStream",
           target: document.querySelector('#scanner-container'),
-          constraints: {
-            facingMode: "environment"
-          }
+          constraints: { facingMode: "environment" }
         },
         decoder: {
           readers: ["ean_reader", "ean_8_reader", "code_128_reader", "upc_reader"]
@@ -117,50 +96,49 @@
       }, function(err) {
         if (err) {
           console.error("Quagga init error:", err);
-          alert("Помилка ініціалізації сканера. Перевірте дозвіл на камеру або перезавантажте сторінку.");
+          alert("Помилка ініціалізації сканера. Перевірте дозвіл на камеру.");
           return;
         }
         Quagga.initialized = true;
         Quagga.start();
-        document.getElementById("status").textContent = MSG.scanning;
+        document.getElementById("status").textContent = "Сканування...";
         document.getElementById("buttons").style.display = "none";
         document.getElementById("notification").style.display = "none";
-        document.getElementById("barcode").textContent = MSG.waiting;
+        document.getElementById("barcode").textContent = "Очікування сканування";
         currentBarcode = null;
+        detectedOnce = false;
 
-        // таймер на випадок, якщо нічого не знайдено
         clearTimeout(timeoutHandle);
         timeoutHandle = setTimeout(() => {
-          document.getElementById("status").textContent = MSG.noResult;
+          if (!detectedOnce) {
+            document.getElementById("status").textContent = "Нічого не знайдено. Спробуйте ще раз.";
+          }
         }, 10000);
       });
 
-      Quagga.onDetected(function(result) {
+      Quagga.onDetected(async function(result) {
         const code = result.codeResult.code;
-        const format = result.codeResult.format;
         const now = Date.now();
-        if (code === lastCode && now - lastTime < 3000) return;
+        if (code === lastCode && now - lastTime < 5000) return;
 
         lastCode = code;
         lastTime = now;
-        currentBarcode = code;
+        detectedOnce = true;
 
-        clearTimeout(timeoutHandle);
-        document.getElementById("scanner-container").classList.add("flash");
-        setTimeout(() => document.getElementById("scanner-container").classList.remove("flash"), 300);
+        await new Promise(r => setTimeout(r, 700)); // затримка для стабілізації автофокусу
 
+        Quagga.pause();
         document.getElementById("barcode").textContent = code;
-        document.getElementById("status").textContent = `${MSG.sent} [${format}]`;
-        document.getElementById("notification").textContent = MSG.sentToTelegram;
+        document.getElementById("status").textContent = `Зчитано код: ${code}`;
+        document.getElementById("notification").textContent = "Сканування успішне!";
         document.getElementById("notification").style.display = "block";
         document.getElementById("buttons").style.display = "block";
-
-        Quagga.stop();
+        currentBarcode = code;
       });
     }
 
     function restartScanner() {
-      document.getElementById("barcode").textContent = MSG.waiting;
+      document.getElementById("barcode").textContent = "Очікування сканування";
       document.getElementById("notification").style.display = "none";
       document.getElementById("buttons").style.display = "none";
       startScanner();
