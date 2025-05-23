@@ -18,6 +18,7 @@
       height: 60vh;
       background: black;
       position: relative;
+      overflow: hidden;
     }
     #status {
       color: white;
@@ -27,6 +28,7 @@
       background: rgba(0, 0, 0, 0.7);
       padding: 5px;
       border-radius: 3px;
+      font-size: 1rem;
     }
     #barcode {
       font-size: 1.5rem;
@@ -59,6 +61,13 @@
       font-weight: bold;
       margin: 10px;
     }
+    .flash {
+      animation: flash 0.3s ease-in-out;
+    }
+    @keyframes flash {
+      0% { background-color: #00ff00; }
+      100% { background-color: transparent; }
+    }
   </style>
 </head>
 <body>
@@ -70,11 +79,22 @@
   <div id="notification"></div>
   <div id="buttons" style="display: none;">
     <button class="button" onclick="restartScanner()">Сканувати ще раз</button>
-    <a class="button" href="https://t.me/NSGChat_bot">Повернутися до Telegram</a>
+    <button class="button" id="btn-open">Перейти до Telegram</button>
   </div>
 
   <script>
-    let currentDeviceId = null;
+    const MSG = {
+      scanning: "Сканування...",
+      sent: "Штрих-код надіслано до Telegram!",
+      noResult: "Не вдалося розпізнати штрих-код. Спробуйте ще раз.",
+      sentToTelegram: "Штрих-код відправлено! Очікуйте відповідь у Telegram.",
+      waiting: "Очікування сканування"
+    };
+
+    let lastCode = null;
+    let lastTime = 0;
+    let timeoutHandle = null;
+    let currentBarcode = null;
 
     async function startScanner() {
       if (Quagga.initialized) {
@@ -102,34 +122,55 @@
         }
         Quagga.initialized = true;
         Quagga.start();
-        document.getElementById("status").textContent = "Сканування...";
+        document.getElementById("status").textContent = MSG.scanning;
         document.getElementById("buttons").style.display = "none";
         document.getElementById("notification").style.display = "none";
+        document.getElementById("barcode").textContent = MSG.waiting;
+        currentBarcode = null;
+
+        // таймер на випадок, якщо нічого не знайдено
+        clearTimeout(timeoutHandle);
+        timeoutHandle = setTimeout(() => {
+          document.getElementById("status").textContent = MSG.noResult;
+        }, 10000);
       });
 
       Quagga.onDetected(function(result) {
-        const barcode = result.codeResult.code;
-        document.getElementById("barcode").textContent = barcode;
-        document.getElementById("status").textContent = "Штрих-код надіслано до Telegram!";
-        document.getElementById("notification").textContent = "Штрих-код відправлено! Очікуйте відповідь у Telegram.";
+        const code = result.codeResult.code;
+        const format = result.codeResult.format;
+        const now = Date.now();
+        if (code === lastCode && now - lastTime < 3000) return;
+
+        lastCode = code;
+        lastTime = now;
+        currentBarcode = code;
+
+        clearTimeout(timeoutHandle);
+        document.getElementById("scanner-container").classList.add("flash");
+        setTimeout(() => document.getElementById("scanner-container").classList.remove("flash"), 300);
+
+        document.getElementById("barcode").textContent = code;
+        document.getElementById("status").textContent = `${MSG.sent} [${format}]`;
+        document.getElementById("notification").textContent = MSG.sentToTelegram;
         document.getElementById("notification").style.display = "block";
-        Quagga.stop();
-        window.location.href = `https://t.me/NSGChat_bot?start=${barcode}`;
         document.getElementById("buttons").style.display = "block";
-        setTimeout(() => {
-          if (document.getElementById("status").textContent === "Штрих-код надіслано до Telegram!") {
-            restartScanner();
-          }
-        }, 3000);
+
+        Quagga.stop();
       });
     }
 
     function restartScanner() {
-      document.getElementById("barcode").textContent = "Очікування сканування";
-      document.getElementById("notification").textContent = "";
+      document.getElementById("barcode").textContent = MSG.waiting;
       document.getElementById("notification").style.display = "none";
+      document.getElementById("buttons").style.display = "none";
       startScanner();
     }
+
+    document.getElementById("btn-open").onclick = () => {
+      if (currentBarcode) {
+        window.location.href = `https://t.me/NSGChat_bot?start=${currentBarcode}`;
+      }
+    };
 
     window.addEventListener('load', async () => {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
