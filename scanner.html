@@ -19,11 +19,6 @@
       background: black;
       position: relative;
     }
-    #camera-select {
-      margin: 10px auto;
-      padding: 5px;
-      font-size: 1rem;
-    }
     #status {
       color: white;
       position: absolute;
@@ -68,7 +63,6 @@
 </head>
 <body>
   <h1>Сканування штрих-коду</h1>
-  <select id="camera-select"></select>
   <div id="scanner-container">
     <div id="status">Сканування...</div>
   </div>
@@ -82,7 +76,7 @@
   <script>
     let currentDeviceId = null;
 
-    async function startScanner(deviceId) {
+    async function startScanner() {
       if (Quagga.initialized) {
         Quagga.stop();
       }
@@ -93,7 +87,7 @@
           type: "LiveStream",
           target: document.querySelector('#scanner-container'),
           constraints: {
-            deviceId: deviceId ? { exact: deviceId } : undefined
+            facingMode: "environment"
           }
         },
         decoder: {
@@ -120,13 +114,10 @@
         document.getElementById("notification").textContent = "Штрих-код відправлено! Очікуйте відповідь у Telegram.";
         document.getElementById("notification").style.display = "block";
         Quagga.stop();
-        // Спроба перенаправлення до Telegram
         window.location.href = `https://t.me/NSGChat_bot?start=${barcode}`;
         document.getElementById("buttons").style.display = "block";
-        // Автоматичний перезапуск через 3 секунди
         setTimeout(() => {
-          const statusText = document.getElementById("status").textContent;
-          if (statusText === "Штрих-код надіслано до Telegram!") {
+          if (document.getElementById("status").textContent === "Штрих-код надіслано до Telegram!") {
             restartScanner();
           }
         }, 3000);
@@ -137,31 +128,7 @@
       document.getElementById("barcode").textContent = "Очікування сканування";
       document.getElementById("notification").textContent = "";
       document.getElementById("notification").style.display = "none";
-      startScanner(currentDeviceId);
-    }
-
-    async function populateCameraList() {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === "videoinput");
-      const cameraSelect = document.getElementById("camera-select");
-      cameraSelect.innerHTML = "";
-
-      videoDevices.forEach((device, index) => {
-        const option = document.createElement("option");
-        option.value = device.deviceId;
-        option.text = device.label || `Камера ${index + 1}`;
-        cameraSelect.appendChild(option);
-      });
-
-      if (videoDevices.length > 0) {
-        currentDeviceId = videoDevices[0].deviceId;
-        startScanner(currentDeviceId);
-      }
-
-      cameraSelect.onchange = () => {
-        currentDeviceId = cameraSelect.value;
-        startScanner(currentDeviceId);
-      };
+      startScanner();
     }
 
     window.addEventListener('load', async () => {
@@ -171,8 +138,8 @@
       }
 
       try {
-        await navigator.mediaDevices.getUserMedia({ video: true });
-        populateCameraList();
+        await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        startScanner();
       } catch (err) {
         console.error("Доступ до камери заборонено:", err);
         alert("❌ Доступ до камери заборонено або не підтримується цим пристроєм.");
