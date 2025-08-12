@@ -18,17 +18,12 @@
       height: 60vh;
       background: black;
       position: relative;
-      overflow: hidden;
     }
     #status {
       color: white;
       position: absolute;
       top: 10px;
       left: 10px;
-      background: rgba(0, 0, 0, 0.7);
-      padding: 5px;
-      border-radius: 3px;
-      font-size: 1rem;
     }
     #barcode {
       font-size: 1.5rem;
@@ -40,34 +35,6 @@
       border-radius: 8px;
       box-shadow: 0 2px 5px rgba(0,0,0,0.3);
     }
-    .button {
-      display: inline-block;
-      padding: 10px 20px;
-      margin: 10px;
-      font-size: 1rem;
-      color: white;
-      background-color: #007bff;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      text-decoration: none;
-    }
-    .button:hover {
-      background-color: #0056b3;
-    }
-    #notification {
-      display: none;
-      color: green;
-      font-weight: bold;
-      margin: 10px;
-    }
-    .flash {
-      animation: flash 0.3s ease-in-out;
-    }
-    @keyframes flash {
-      0% { background-color: #00ff00; }
-      100% { background-color: transparent; }
-    }
   </style>
 </head>
 <body>
@@ -76,29 +43,45 @@
     <div id="status">Сканування...</div>
   </div>
   <p>Товар з кодом: <span id="barcode">Очікування сканування</span></p>
-  <div id="notification"></div>
-  <div id="buttons" style="display: none;">
-    <button class="button" onclick="restartScanner()">Сканувати ще раз</button>
-    <button class="button" id="btn-open">Перейти до Telegram</button>
-  </div>
 
   <script>
-    const MSG = {
-      scanning: "Сканування...",
-      sent: "Штрих-код надіслано до Telegram!",
-      noResult: "Не вдалося розпізнати штрих-код. Спробуйте ще раз.",
-      sentToTelegram: "Штрих-код відправлено! Очікуйте відповідь у Telegram.",
-      waiting: "Очікування сканування"
-    };
+    let currentDeviceId = null;
 
-    let lastCode = null;
-    let lastTime = 0;
-    let timeoutHandle = null;
-    let currentBarcode = null;
-
-    async function startScanner() {
+    async function startScanner(deviceId = null) {
       if (Quagga.initialized) {
         Quagga.stop();
+      }
+
+      // Автоматичний вибір задньої камери
+      if (!deviceId && !currentDeviceId) {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === "videoinput");
+        console.log("Доступні камери:", videoDevices.map(cam => ({ id: cam.deviceId, label: cam.label })));
+        if (videoDevices.length === 0) {
+          alert("Камери не знайдено");
+          return;
+        }
+        let rearCamera = videoDevices.find(cam => cam.label.toLowerCase().includes("rear") || cam.label.toLowerCase().includes("back"));
+        if (!rearCamera) {
+          // Спроба знайти камеру з facingMode "environment"
+          for (let cam of videoDevices) {
+            try {
+              const stream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: cam.deviceId }, facingMode: "environment" }
+              });
+              stream.getTracks().forEach(track => track.stop());
+              rearCamera = cam;
+              console.log("Знайдено задню камеру:", cam.deviceId);
+              break;
+            } catch (err) {
+              console.log("Камера не підтримує environment:", cam.deviceId);
+            }
+          }
+        }
+        currentDeviceId = rearCamera ? rearCamera.deviceId : videoDevices[0].deviceId;
+        console.log("Обрана камера:", currentDeviceId);
+      } else if (deviceId) {
+        currentDeviceId = deviceId;
       }
 
       Quagga.init({
@@ -107,7 +90,8 @@
           type: "LiveStream",
           target: document.querySelector('#scanner-container'),
           constraints: {
-            facingMode: "environment"
+            deviceId: currentDeviceId ? { exact: currentDeviceId } : undefined,
+            facingMode: "environment" // Примусово задня камера
           }
         },
         decoder: {
@@ -117,60 +101,35 @@
       }, function(err) {
         if (err) {
           console.error("Quagga init error:", err);
-          alert("Помилка ініціалізації сканера. Перевірте дозвіл на камеру або перезавантажте сторінку.");
+          alert("Помилка ініціалізації сканера. Перевір дозвіл на камеру або перезавантаж сторінку.");
           return;
         }
         Quagga.initialized = true;
         Quagga.start();
-        document.getElementById("status").textContent = MSG.scanning;
-        document.getElementById("buttons").style.display = "none";
-        document.getElementById("notification").style.display = "none";
-        document.getElementById("barcode").textContent = MSG.waiting;
-        currentBarcode = null;
-
-        // таймер на випадок, якщо нічого не знайдено
-        clearTimeout(timeoutHandle);
-        timeoutHandle = setTimeout(() => {
-          document.getElementById("status").textContent = MSG.noResult;
-        }, 10000);
       });
 
       Quagga.onDetected(function(result) {
-        const code = result.codeResult.code;
-        const format = result.codeResult.format;
-        const now = Date.now();
-        if (code === lastCode && now - lastTime < 3000) return;
+        const barcode = result.codeResult.code;
+        const decoder = result.codeResult.decoder;
+        console.log("Виявлено код:", barcode, "Декодер:", decoder, "Довжина:", barcode.length);
 
-        lastCode = code;
-        lastTime = now;
-        currentBarcode = code;
+        // Спрощена фільтрація: приймаємо всі коди від валідних декодерів
+        const validDecoders = ["ean_reader", "ean_8_reader", "code_128_reader", "upc_reader"];
+        if (barcode && validDecoders.includes(decoder)) {
+          document.getElementById("barcode").textContent = barcode;
+          Quagga.stop();
 
-        clearTimeout(timeoutHandle);
-        document.getElementById("scanner-container").classList.add("flash");
-        setTimeout(() => document.getElementById("scanner-container").classList.remove("flash"), 300);
-
-        document.getElementById("barcode").textContent = code;
-        document.getElementById("status").textContent = `${MSG.sent} [${format}]`;
-        document.getElementById("notification").textContent = MSG.sentToTelegram;
-        document.getElementById("notification").style.display = "block";
-        document.getElementById("buttons").style.display = "block";
-
-        Quagga.stop();
+          // Перенаправлення з закриттям сторінки
+          setTimeout(() => {
+            window.location.href = `https://t.me/NSGChat_bot?start=${encodeURIComponent(barcode)}`;
+            window.close();
+          }, 500);
+        } else {
+          console.warn("Недійсний штрих-код:", barcode, "Декодер:", decoder);
+          document.getElementById('status').textContent = 'Сканування... (Недійсний код)';
+        }
       });
     }
-
-    function restartScanner() {
-      document.getElementById("barcode").textContent = MSG.waiting;
-      document.getElementById("notification").style.display = "none";
-      document.getElementById("buttons").style.display = "none";
-      startScanner();
-    }
-
-    document.getElementById("btn-open").onclick = () => {
-      if (currentBarcode) {
-        window.location.href = `https://t.me/NSGChat_bot?start=${currentBarcode}`;
-      }
-    };
 
     window.addEventListener('load', async () => {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -179,7 +138,7 @@
       }
 
       try {
-        await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        await navigator.mediaDevices.getUserMedia({ video: true });
         startScanner();
       } catch (err) {
         console.error("Доступ до камери заборонено:", err);
