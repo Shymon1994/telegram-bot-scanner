@@ -1,256 +1,114 @@
 <!DOCTYPE html>
 <html lang="uk">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Сканування штрих‑коду — автофокус та автокамера</title>
-  <style>
-    :root { --bg:#0b0b0b; --fg:#fff; --accent:#2b3362; --ok:#12aa5b; --warn:#e45e27; }
-    * { box-sizing:border-box }
-    html,body { margin:0; padding:0; background:#f4f4f4; font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif }
-    header { padding:10px 16px; background:#fff; border-bottom:1px solid #e8e8e8 }
-    h1 { margin:0; font-size:18px }
-    #wrap { max-width:960px; margin:0 auto; padding:12px }
-    #view { position:relative; width:100%; height:62vh; background:#000; border-radius:12px; overflow:hidden }
-    #video { width:100%; height:100%; object-fit:cover; transform:scaleX(-1); /* iOS back-cam mirroring fix: removed when environment */ }
-    #status { position:absolute; top:10px; left:10px; padding:6px 10px; background:rgba(0,0,0,.6); color:#fff; font-size:14px; border-radius:6px }
-    #roi { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:min(92%,780px); height:38%; border:2px solid rgba(255,255,255,.9); border-radius:10px; box-shadow:0 0 0 200vmax rgba(0,0,0,.35) inset; pointer-events:none }
-    #barcode { font-size:20px; font-weight:700; display:inline-block; margin:12px 0; padding:8px 12px; background:#fff; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,.15) }
-    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center }
-    button { appearance:none; border:1px solid #d0d0d0; background:#fff; color:#111; padding:10px 14px; border-radius:10px; font-size:14px; cursor:pointer }
-    button.primary { background:var(--accent); color:#fff; border-color:transparent }
-    button.ok { background:var(--ok); color:#fff; border-color:transparent }
-    button.warn { background:var(--warn); color:#fff; border-color:transparent }
-    .flash { animation: flash .2s ease-in-out }
-    @keyframes flash { 0%{ background-color:#00ff00 } 100%{ background-color:transparent } }
-    #note { font-size:13px; color:#333 }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сканування штрих-коду</title>
+    <script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
+        #scanner { width: 100%; max-width: 400px; height: 300px; border: 1px solid #ccc; margin: 20px auto; }
+        #result { margin: 20px; font-size: 18px; }
+        button { padding: 10px 20px; font-size: 16px; margin: 5px; }
+        #torchToggle { display: none; } /* Приховуємо кнопку ліхтарика за замовчуванням */
+    </style>
 </head>
 <body>
-<header><h1>Сканування штрих‑коду</h1></header>
-<div id="wrap">
-  <div id="view">
-    <video id="video" autoplay playsinline></video>
-    <div id="roi"></div>
-    <div id="status">Ініціалізація…</div>
-  </div>
-  <div class="row" style="margin-top:12px">
-    <span id="barcode">Очікування сканування</span>
-    <button class="primary" id="btn-restart">Сканувати ще раз</button>
-    <button class="ok" id="btn-open">Відкрити у Telegram</button>
-    <button class="warn" id="btn-torch">Ліхтарик</button>
-  </div>
-  <p id="note">Формати: EAN‑13 / EAN‑8 / UPC‑A. Контрольна сума + 3 підтвердження. Автовибір задньої камери, без меню.</p>
-</div>
+    <h1>Сканування штрих-коду</h1>
+    <video id="scanner" autoplay playsinline></video>
+    <p id="result">Ініціалізація…</p>
+    <div>
+        <button onclick="startScanner()">Почати сканування</button>
+        <button onclick="stopScanner()">Сканувати ще раз</button>
+        <button onclick="openTelegram()">Відкрити у Telegram</button>
+        <button id="torchToggle" onclick="toggleTorch()">Ліхтарик</button>
+    </div>
+    <p>Формати: EAN-13 / EAN-8 / UPC-A. Контрольна сума + 3 підтвердження. Автовибір задньої камери.</p>
 
-<script type="module">
-/* ===== Загальні константи ===== */
-const BOT_DEEPLINK = 'https://t.me/NSGChat_bot?start=';
-const ROI = { top:0.31, bottom:0.31, left:0.05, right:0.05 }; // 38% вертикально
-const NEED_CONF = 3; // підтверджень підряд
-const MSG = {
-  init: 'Ініціалізація…',
-  scanning: 'Сканування…',
-  noResult: 'Немає результату. Піднесіть ближче або поверніть етикетку.',
-  sent: 'Код зафіксовано.',
-  torchOn: 'Ліхтарик: увімкнено',
-  torchOff: 'Ліхтарик',
-};
+    <script>
+        let codeReader = new ZXing.BrowserMultiFormatReader();
+        let selectedDeviceId;
+        let isScanning = false;
+        let torchEnabled = false;
 
-const els = {
-  v: document.getElementById('video'),
-  status: document.getElementById('status'),
-  code: document.getElementById('barcode'),
-  view: document.getElementById('view'),
-  torch: document.getElementById('btn-torch'),
-  btnOpen: document.getElementById('btn-open'),
-  btnRestart: document.getElementById('btn-restart'),
-};
+        // Ініціалізація сканера
+        async function startScanner() {
+            if (isScanning) return;
+            isScanning = true;
+            document.getElementById('result').innerText = 'Очікування сканування…';
 
-let stream, track, torchOn = false;
-let last = null, conf = 0, fixed = null;
+            try {
+                const videoInputDevices = await codeReader.getVideoInputDevices();
+                if (videoInputDevices.length === 0) {
+                    document.getElementById('result').innerText = 'Камера не знайдена.';
+                    return;
+                }
 
-/* ===== Перевірки контрольних сум ===== */
-const isEAN13 = s => /^\d{13}$/.test(s) && (((10 - ([...s].slice(0,12).reduce((a, d, i)=>a + (+d)*(i%2?3:1), 0) % 10)) % 10) === +s[12]);
-const isEAN8  = s => /^\d{8}$/.test(s)  && (((10 - ([...s].slice(0,7).reduce((a, d, i)=>a + (+d)*(i%2?1:3), 0) % 10)) % 10) === +s[7]);
-const isUPCA  = s => /^\d{12}$/.test(s) && (((10 - ((([...s].slice(0,11)).reduce((a,d,i)=>a + (+d)*(i%2?1:3),0)) % 10)) % 10) === +s[11]);
+                // Автовибір задньої камери
+                selectedDeviceId = videoInputDevices[videoInputDevices.length - 1].deviceId; // Зазвичай задня камера
+                codeReader.decodeFromVideoDevice(selectedDeviceId, 'scanner', (result, err) => {
+                    if (result) {
+                        document.getElementById('result').innerText = `Товар з кодом: ${result.text}`;
+                        stopScanner(); // Зупиняємо сканування після успіху
+                    }
+                    if (err && !(err instanceof ZXing.NotFoundException)) {
+                        console.error(err);
+                        document.getElementById('result').innerText = 'Помилка сканування.';
+                    }
+                });
 
-/* ===== Камера: автопідбір задньої ===== */
-async function getBackCameraConstraints() {
-  // Спочатку environment
-  const base = {
-    audio: false,
-    video: {
-      facingMode: { ideal: 'environment' },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
-      focusMode: 'continuous',
-      advanced: [{ focusMode:'continuous' }, { zoom:2 }]
-    }
-  };
-  return base;
-}
+                // Перевірка наявності ліхтарика
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: selectedDeviceId } });
+                const track = stream.getVideoTracks()[0];
+                if (track.getCapabilities().torch) {
+                    document.getElementById('torchToggle').style.display = 'inline-block';
+                }
+                stream.getTracks().forEach(track => track.stop());
+            } catch (err) {
+                document.getElementById('result').innerText = 'Помилка доступу до камери: ' + err.message;
+                console.error(err);
+            }
+        }
 
-async function startCamera() {
-  stopCamera();
-  const constraints = await getBackCameraConstraints();
-  stream = await navigator.mediaDevices.getUserMedia(constraints);
-  els.v.srcObject = stream;
-  track = stream.getVideoTracks()[0];
-  const settings = track.getSettings?.() || {};
-  if (settings.facingMode === 'environment') els.v.style.transform = ''; // без дзеркалення
-  await new Promise(r => els.v.onloadedmetadata = r);
-  await els.v.play();
+        // Зупинка сканера
+        function stopScanner() {
+            codeReader.reset();
+            isScanning = false;
+            document.getElementById('result').innerText = 'Сканування зупинено. Натисніть "Почати сканування".';
+        }
 
-  // Автофокус: якщо підтримується — вмикаємо continuous/auto
-  try {
-    const caps = track.getCapabilities?.() || {};
-    if (caps.focusMode && caps.focusMode.length) {
-      await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-    }
-  } catch {}
+        // Переключення ліхтарика
+        async function toggleTorch() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: selectedDeviceId } });
+                const track = stream.getVideoTracks()[0];
+                if (track.getCapabilities().torch) {
+                    await track.applyConstraints({
+                        advanced: [{ torch: !torchEnabled }]
+                    });
+                    torchEnabled = !torchEnabled;
+                    document.getElementById('torchToggle').textContent = torchEnabled ? 'Вимкнути ліхтарик' : 'Ліхтарик';
+                }
+                stream.getTracks().forEach(track => track.stop());
+            } catch (err) {
+                console.error('Помилка з ліхтариком:', err);
+            }
+        }
 
-  els.status.textContent = MSG.scanning;
-}
+        // Відкриття Telegram
+        function openTelegram() {
+            const code = document.getElementById('result').innerText.replace('Товар з кодом: ', '').trim();
+            if (code) {
+                window.location.href = `https://t.me/NSGChat_bot?start=${encodeURIComponent(code)}`; // Замініть на ваш username бота
+            } else {
+                window.location.href = 'https://t.me/NSGChat_bot'; // Замініть на ваш username бота
+            }
+        }
 
-/* ===== Детекція: спочатку Native BarcodeDetector, далі fallback ZXing/Quagga2 ===== */
-const hasNative = 'BarcodeDetector' in window;
-
-let quaggaLoaded = false;
-async function ensureQuagga() {
-  if (quaggaLoaded) return;
-  await import('https://unpkg.com/@ericblade/quagga2@1.2.6/dist/quagga.min.js');
-  quaggaLoaded = true;
-}
-
-/* ===== Основний цикл детекції ===== */
-function inRoi(normX, normY) {
-  return normX > ROI.left && normX < 1-ROI.right && normY > ROI.top && normY < 1-ROI.bottom;
-}
-
-function accept(code, fmt) {
-  // нормалізація: EAN-13 з нулем -> UPC-A
-  if (/^\d{13}$/.test(code) && code.startsWith('0') && isUPCA(code.slice(1))) {
-    code = code.slice(1); fmt = 'upc_a';
-  }
-  if (!(isEAN13(code) || isEAN8(code) || isUPCA(code))) return null;
-  return { code, fmt };
-}
-
-async function loopNative() {
-  const detector = new window.BarcodeDetector({ formats: ['ean-13','ean-8','upc-a'] });
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-
-  const step = async () => {
-    if (!els.v.videoWidth) return requestAnimationFrame(step);
-    canvas.width = els.v.videoWidth; canvas.height = els.v.videoHeight;
-    ctx.drawImage(els.v, 0, 0, canvas.width, canvas.height);
-    try {
-      const codes = await detector.detect(canvas);
-      for (const c of codes) {
-        const box = c.cornerPoints || [];
-        // центр боксу
-        const cx = box.length ? (box.reduce((a,p)=>a+p.x,0)/box.length)/canvas.width : .5;
-        const cy = box.length ? (box.reduce((a,p)=>a+p.y,0)/box.length)/canvas.height : .5;
-        if (!inRoi(cx, cy)) continue;
-        const cleaned = String(c.rawValue||'').replace(/\D+/g,'');
-        const ok = accept(cleaned, c.format);
-        if (ok) { onDetect(ok.code); return; }
-      }
-    } catch {}
-    requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-
-async function loopQuagga() {
-  await ensureQuagga();
-  const area = {
-    top: `${ROI.top*100}%`,
-    right: `${ROI.right*100}%`,
-    left: `${ROI.left*100}%`,
-    bottom: `${ROI.bottom*100}%`
-  };
-  const passes = [
-    { patchSize:'medium', halfSample:false },
-    { patchSize:'large', halfSample:false },
-    { patchSize:'small', halfSample:true },
-  ];
-  for (let pass of passes) {
-    await new Promise((resolve, reject) => {
-      Quagga.init({
-        inputStream: {
-          name: 'Live',
-          type: 'LiveStream',
-          target: document.querySelector('#view'),
-          constraints: { facingMode: 'environment', width:{ideal:1920}, height:{ideal:1080} },
-          area
-        },
-        locator: pass,
-        locate: true,
-        frequency: 10,
-        numOfWorkers: navigator.hardwareConcurrency ? Math.min(4, Math.max(1, navigator.hardwareConcurrency-1)) : 2,
-        decoder: { readers: ['ean_reader','ean_8_reader','upc_reader'] }
-      }, (err)=> err ? reject(err) : resolve());
-    });
-
-    Quagga.onDetected(res => {
-      const raw = (res && res.codeResult && res.codeResult.code) ? String(res.codeResult.code) : '';
-      const cleaned = raw.replace(/\D+/g,'');
-      const fmt = res && res.codeResult && res.codeResult.format || '';
-      const ok = accept(cleaned, fmt);
-      if (ok) onDetect(ok.code);
-    });
-    Quagga.start();
-    // кожен прохід даємо 5 секунд
-    await new Promise(r => setTimeout(r, 5000));
-    try { Quagga.stop(); } catch {}
-    if (fixed) return; // якщо знайшли — виходимо
-  }
-  if (!fixed) els.status.textContent = MSG.noResult;
-}
-
-/* ===== Обробка результату з дебаунсом ===== */
-function onDetect(code) {
-  if (code !== last) { last = code; conf = 1; return; }
-  conf++;
-  if (conf < NEED_CONF) return;
-
-  fixed = code;
-  els.view.classList.add('flash');
-  setTimeout(()=>els.view.classList.remove('flash'), 180);
-  els.code.textContent = code;
-  els.status.textContent = MSG.sent;
-}
-
-async function toggleTorch() {
-  if (!track) return;
-  try {
-    const caps = track.getCapabilities?.() || {};
-    if (!caps.torch) return;
-    torchOn = !torchOn;
-    await track.applyConstraints({ advanced: [{ torch: torchOn }] });
-    els.torch.textContent = torchOn ? MSG.torchOn : MSG.torchOff;
-  } catch {}
-}
-
-/* ===== Дії користувача ===== */
-els.btnOpen.onclick = () => { if (fixed) location.href = BOT_DEEPLINK + fixed; };
-els.btnRestart.onclick = async () => { fixed=null; last=null; conf=0; els.code.textContent='Очікування сканування'; els.status.textContent=MSG.scanning; };
-els.torch.onclick = toggleTorch;
-
-/* ===== Старт ===== */
-(async () => {
-  if (!navigator.mediaDevices?.getUserMedia) { alert('Браузер не підтримує камеру.'); return; }
-  await startCamera();
-  els.status.textContent = MSG.scanning;
-  if (hasNative) {
-    loopNative();
-  } else {
-    loopQuagga();
-  }
-})();
-</script>
+        // Запуск при завантаженні
+        window.onload = () => {
+            document.getElementById('result').innerText = 'Натисніть "Почати сканування" для старту.';
+        };
+    </script>
 </body>
 </html>
