@@ -3,328 +3,254 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Сканування штрих-коду — точне зчитування</title>
-  <script src="https://unpkg.com/@ericblade/quagga2@1.2.6/dist/quagga.min.js"></script>
+  <title>Сканування штрих‑коду — автофокус та автокамера</title>
   <style>
-    :root {
-      --bg:#0b0b0b; --fg:#fff; --accent:#2b7fff; --ok:#12aa5b; --warn:#d98324; --err:#d64545;
-    }
-    * { box-sizing: border-box; }
-    html,body { margin:0; padding:0; background:#f4f4f4; font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    header { padding:10px 16px; background:#fff; border-bottom:1px solid #e8e8e8; }
-    h1 { margin:0; font-size:18px; }
-    #wrap { max-width:960px; margin:0 auto; padding:12px; }
-    #scanner-container { position:relative; width:100%; height:60vh; background:#000; border-radius:12px; overflow:hidden; }
-    #status { position:absolute; top:10px; left:10px; padding:6px 10px; background:rgba(0,0,0,.6); color:#fff; font-size:14px; border-radius:6px; }
-    #overlay { position:absolute; inset:0; pointer-events:none; }
-    /* ROI frame (центральне вікно для компенсації викривлення на банках/пляшках) */
-    .roi {
-      position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-      width:min(90%, 680px); height:34%; /* вузька смуга у центрі */
-      border:2px solid rgba(255,255,255,.85); border-radius:8px;
-      box-shadow:0 0 0 200vmax rgba(0,0,0,.35) inset;
-    }
-    #barcode { font-size:20px; font-weight:700; display:inline-block; margin:12px 0; padding:8px 12px; background:#fff; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,.15); }
-    #note { font-size:14px; color:#333; }
-    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-    button, select {
-      appearance:none; border:1px solid #d0d0d0; background:#fff; color:#111;
-      padding:10px 14px; border-radius:10px; font-size:14px; cursor:pointer;
-    }
-    button.primary { background:var(--accent); color:#fff; border-color:transparent; }
-    button.ok { background:var(--ok); color:#fff; border-color:transparent; }
-    button.warn { background:var(--warn); color:#fff; border-color:transparent; }
-    #notification { display:none; font-weight:700; margin:8px 0; }
-    .flash { animation: flash 0.2s ease-in-out; }
-    @keyframes flash { 0%{ background-color:#00ff00; } 100%{ background-color:transparent; } }
+    :root { --bg:#0b0b0b; --fg:#fff; --accent:#2b3362; --ok:#12aa5b; --warn:#e45e27; }
+    * { box-sizing:border-box }
+    html,body { margin:0; padding:0; background:#f4f4f4; font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif }
+    header { padding:10px 16px; background:#fff; border-bottom:1px solid #e8e8e8 }
+    h1 { margin:0; font-size:18px }
+    #wrap { max-width:960px; margin:0 auto; padding:12px }
+    #view { position:relative; width:100%; height:62vh; background:#000; border-radius:12px; overflow:hidden }
+    #video { width:100%; height:100%; object-fit:cover; transform:scaleX(-1); /* iOS back-cam mirroring fix: removed when environment */ }
+    #status { position:absolute; top:10px; left:10px; padding:6px 10px; background:rgba(0,0,0,.6); color:#fff; font-size:14px; border-radius:6px }
+    #roi { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:min(92%,780px); height:38%; border:2px solid rgba(255,255,255,.9); border-radius:10px; box-shadow:0 0 0 200vmax rgba(0,0,0,.35) inset; pointer-events:none }
+    #barcode { font-size:20px; font-weight:700; display:inline-block; margin:12px 0; padding:8px 12px; background:#fff; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,.15) }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center }
+    button { appearance:none; border:1px solid #d0d0d0; background:#fff; color:#111; padding:10px 14px; border-radius:10px; font-size:14px; cursor:pointer }
+    button.primary { background:var(--accent); color:#fff; border-color:transparent }
+    button.ok { background:var(--ok); color:#fff; border-color:transparent }
+    button.warn { background:var(--warn); color:#fff; border-color:transparent }
+    .flash { animation: flash .2s ease-in-out }
+    @keyframes flash { 0%{ background-color:#00ff00 } 100%{ background-color:transparent } }
+    #note { font-size:13px; color:#333 }
   </style>
 </head>
 <body>
-  <header><h1>Сканування штрих-коду — точне зчитування</h1></header>
-  <div id="wrap">
-    <div id="scanner-container">
-      <div id="status">Ініціалізація…</div>
-      <div id="overlay"><div class="roi" id="roi"></div></div>
-    </div>
-
-    <div class="row" style="margin-top:12px;">
-      <span id="barcode">Очікування сканування</span>
-      <span id="notification"></span>
-    </div>
-
-    <div class="row">
-      <button class="primary" id="btn-restart">Сканувати ще раз</button>
-      <button class="ok" id="btn-open">Відкрити у Telegram</button>
-      <button class="warn" id="btn-torch" title="Ліхтарик">Ліхтарик</button>
-      <select id="cameraSelect" title="Камера"></select>
-    </div>
-
-    <p id="note">
-      Фільтр: лише EAN-13 / EAN-8 / UPC-A. Перевірка контрольної суми. Нормалізація UPC-A з префіксом 0 з EAN-13.
-      Потрібно не менше 3 послідовних підтверджень одного й того ж коду.
-    </p>
+<header><h1>Сканування штрих‑коду</h1></header>
+<div id="wrap">
+  <div id="view">
+    <video id="video" autoplay playsinline></video>
+    <div id="roi"></div>
+    <div id="status">Ініціалізація…</div>
   </div>
+  <div class="row" style="margin-top:12px">
+    <span id="barcode">Очікування сканування</span>
+    <button class="primary" id="btn-restart">Сканувати ще раз</button>
+    <button class="ok" id="btn-open">Відкрити у Telegram</button>
+    <button class="warn" id="btn-torch">Ліхтарик</button>
+  </div>
+  <p id="note">Формати: EAN‑13 / EAN‑8 / UPC‑A. Контрольна сума + 3 підтвердження. Автовибір задньої камери, без меню.</p>
+</div>
 
-  <script>
-    const MSG = {
-      init: "Ініціалізація…",
-      scanning: "Сканування…",
-      sent: "Готово. Код розпізнано.",
-      noResult: "Немає результату. Перевірте фокус/світло або піднесіть ближче.",
-      waiting: "Очікування сканування",
-      sentToTelegram: "Відправлення коду до Telegram через deep-link."
-    };
+<script type="module">
+/* ===== Загальні константи ===== */
+const BOT_DEEPLINK = 'https://t.me/NSGChat_bot?start=';
+const ROI = { top:0.31, bottom:0.31, left:0.05, right:0.05 }; // 38% вертикально
+const NEED_CONF = 3; // підтверджень підряд
+const MSG = {
+  init: 'Ініціалізація…',
+  scanning: 'Сканування…',
+  noResult: 'Немає результату. Піднесіть ближче або поверніть етикетку.',
+  sent: 'Код зафіксовано.',
+  torchOn: 'Ліхтарик: увімкнено',
+  torchOff: 'Ліхтарик',
+};
 
-    // Конфігурація — лише потрібні стандарти, щоб не хапати «зайві» коди
-    const READERS = [
-      "ean_reader",     // EAN-13
-      "ean_8_reader",   // EAN-8
-      "upc_reader"      // UPC-A
-      // "upc_e_reader" // Додайте при необхідності, але потрібен окремий валідатор
-    ];
+const els = {
+  v: document.getElementById('video'),
+  status: document.getElementById('status'),
+  code: document.getElementById('barcode'),
+  view: document.getElementById('view'),
+  torch: document.getElementById('btn-torch'),
+  btnOpen: document.getElementById('btn-open'),
+  btnRestart: document.getElementById('btn-restart'),
+};
 
-    let lastCode = null;
-    let consecutive = 0;
-    let timeoutHandle = null;
-    let currentBarcode = null;
-    let activeTrack = null;
-    let torchOn = false;
+let stream, track, torchOn = false;
+let last = null, conf = 0, fixed = null;
 
-    // Перевірка контрольної суми EAN-13
-    function isValidEAN13(code) {
-      if (!/^\d{13}$/.test(code)) return false;
-      let sum = 0;
-      for (let i = 0; i < 12; i++) {
-        const n = parseInt(code[i], 10);
-        sum += (i % 2 === 0) ? n : n * 3;
+/* ===== Перевірки контрольних сум ===== */
+const isEAN13 = s => /^\d{13}$/.test(s) && (((10 - ([...s].slice(0,12).reduce((a, d, i)=>a + (+d)*(i%2?3:1), 0) % 10)) % 10) === +s[12]);
+const isEAN8  = s => /^\d{8}$/.test(s)  && (((10 - ([...s].slice(0,7).reduce((a, d, i)=>a + (+d)*(i%2?1:3), 0) % 10)) % 10) === +s[7]);
+const isUPCA  = s => /^\d{12}$/.test(s) && (((10 - ((([...s].slice(0,11)).reduce((a,d,i)=>a + (+d)*(i%2?1:3),0)) % 10)) % 10) === +s[11]);
+
+/* ===== Камера: автопідбір задньої ===== */
+async function getBackCameraConstraints() {
+  // Спочатку environment
+  const base = {
+    audio: false,
+    video: {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      focusMode: 'continuous',
+      advanced: [{ focusMode:'continuous' }, { zoom:2 }]
+    }
+  };
+  return base;
+}
+
+async function startCamera() {
+  stopCamera();
+  const constraints = await getBackCameraConstraints();
+  stream = await navigator.mediaDevices.getUserMedia(constraints);
+  els.v.srcObject = stream;
+  track = stream.getVideoTracks()[0];
+  const settings = track.getSettings?.() || {};
+  if (settings.facingMode === 'environment') els.v.style.transform = ''; // без дзеркалення
+  await new Promise(r => els.v.onloadedmetadata = r);
+  await els.v.play();
+
+  // Автофокус: якщо підтримується — вмикаємо continuous/auto
+  try {
+    const caps = track.getCapabilities?.() || {};
+    if (caps.focusMode && caps.focusMode.length) {
+      await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+    }
+  } catch {}
+
+  els.status.textContent = MSG.scanning;
+}
+
+/* ===== Детекція: спочатку Native BarcodeDetector, далі fallback ZXing/Quagga2 ===== */
+const hasNative = 'BarcodeDetector' in window;
+
+let quaggaLoaded = false;
+async function ensureQuagga() {
+  if (quaggaLoaded) return;
+  await import('https://unpkg.com/@ericblade/quagga2@1.2.6/dist/quagga.min.js');
+  quaggaLoaded = true;
+}
+
+/* ===== Основний цикл детекції ===== */
+function inRoi(normX, normY) {
+  return normX > ROI.left && normX < 1-ROI.right && normY > ROI.top && normY < 1-ROI.bottom;
+}
+
+function accept(code, fmt) {
+  // нормалізація: EAN-13 з нулем -> UPC-A
+  if (/^\d{13}$/.test(code) && code.startsWith('0') && isUPCA(code.slice(1))) {
+    code = code.slice(1); fmt = 'upc_a';
+  }
+  if (!(isEAN13(code) || isEAN8(code) || isUPCA(code))) return null;
+  return { code, fmt };
+}
+
+async function loopNative() {
+  const detector = new window.BarcodeDetector({ formats: ['ean-13','ean-8','upc-a'] });
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  const step = async () => {
+    if (!els.v.videoWidth) return requestAnimationFrame(step);
+    canvas.width = els.v.videoWidth; canvas.height = els.v.videoHeight;
+    ctx.drawImage(els.v, 0, 0, canvas.width, canvas.height);
+    try {
+      const codes = await detector.detect(canvas);
+      for (const c of codes) {
+        const box = c.cornerPoints || [];
+        // центр боксу
+        const cx = box.length ? (box.reduce((a,p)=>a+p.x,0)/box.length)/canvas.width : .5;
+        const cy = box.length ? (box.reduce((a,p)=>a+p.y,0)/box.length)/canvas.height : .5;
+        if (!inRoi(cx, cy)) continue;
+        const cleaned = String(c.rawValue||'').replace(/\D+/g,'');
+        const ok = accept(cleaned, c.format);
+        if (ok) { onDetect(ok.code); return; }
       }
-      const check = (10 - (sum % 10)) % 10;
-      return check === parseInt(code[12], 10);
-    }
+    } catch {}
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
 
-    // Перевірка контрольної суми EAN-8
-    function isValidEAN8(code) {
-      if (!/^\d{8}$/.test(code)) return false;
-      let sum = 0;
-      for (let i = 0; i < 7; i++) {
-        const n = parseInt(code[i], 10);
-        sum += (i % 2 === 0) ? n * 3 : n;
-      }
-      const check = (10 - (sum % 10)) % 10;
-      return check === parseInt(code[7], 10);
-    }
-
-    // Перевірка контрольної суми UPC-A (12 цифр)
-    function isValidUPCA(code) {
-      if (!/^\d{12}$/.test(code)) return false;
-      let odd = 0, even = 0;
-      for (let i = 0; i < 11; i++) {
-        const n = parseInt(code[i], 10);
-        if (i % 2 === 0) odd += n; else even += n;
-      }
-      const total = odd * 3 + even;
-      const check = (10 - (total % 10)) % 10;
-      return check === parseInt(code[11], 10);
-    }
-
-    function normalizeAndValidate(result) {
-      if (!result || !result.codeResult) return null;
-      let code = String(result.codeResult.code || "").replace(/\D+/g, ""); // тільки цифри
-      const fmt = result.codeResult.format;
-
-      // Нормалізація: EAN-13 із префіксом 0 = UPC-A (12 цифр)
-      if (fmt === "ean_13" && /^0\d{12}$/.test(code)) {
-        const upc = code.slice(1);
-        if (isValidUPCA(upc)) return { code: upc, fmt: "upc_a" };
-      }
-
-      if (fmt === "ean_13" && isValidEAN13(code)) return { code, fmt: "ean_13" };
-      if (fmt === "ean_8" && isValidEAN8(code)) return { code, fmt: "ean_8" };
-      if ((fmt === "upc_a" || fmt === "upc") && isValidUPCA(code)) return { code, fmt: "upc_a" };
-
-      // Додатковий випадок: деякі браузери повертають формат 'code_128' на викривлених поверхнях — відсікаємо
-      return null;
-    }
-
-    function setStatus(t) { document.getElementById("status").textContent = t; }
-    function setNote(t, color="#111") {
-      const el = document.getElementById("notification");
-      el.style.display = "inline-block";
-      el.style.color = color;
-      el.textContent = t;
-    }
-    function clearNote() { const el = document.getElementById("notification"); el.style.display = "none"; el.textContent = ""; }
-
-    async function listCameras() {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cams = devices.filter(d => d.kind === "videoinput");
-      const sel = document.getElementById("cameraSelect");
-      sel.innerHTML = "";
-      cams.forEach((d, i) => {
-        const opt = document.createElement("option");
-        opt.value = d.deviceId;
-        opt.textContent = d.label || ("Камера " + (i+1));
-        sel.appendChild(opt);
-      });
-      return cams;
-    }
-
-    async function startScanner(deviceId=null) {
-      if (Quagga.initialized) {
-        try { Quagga.stop(); } catch(e) {}
-      }
-
-      clearNote();
-      consecutive = 0;
-      lastCode = null;
-      currentBarcode = null;
-      setStatus(MSG.init);
-
-      const area = computeROI();
-      const constraints = {
-        facingMode: deviceId ? undefined : { ideal: "environment" },
-        deviceId: deviceId ? { exact: deviceId } : undefined,
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        aspectRatio: { ideal: 16/9 },
-        advanced: [
-          { focusMode: "continuous" },
-          { torch: torchOn },
-          { zoom: 2 }
-        ]
-      };
-
+async function loopQuagga() {
+  await ensureQuagga();
+  const area = {
+    top: `${ROI.top*100}%`,
+    right: `${ROI.right*100}%`,
+    left: `${ROI.left*100}%`,
+    bottom: `${ROI.bottom*100}%`
+  };
+  const passes = [
+    { patchSize:'medium', halfSample:false },
+    { patchSize:'large', halfSample:false },
+    { patchSize:'small', halfSample:true },
+  ];
+  for (let pass of passes) {
+    await new Promise((resolve, reject) => {
       Quagga.init({
         inputStream: {
-          name: "Live",
-          type: "LiveStream",
-          target: document.querySelector("#scanner-container"),
-          constraints,
-          area // ROI для кращого читання на циліндрах
+          name: 'Live',
+          type: 'LiveStream',
+          target: document.querySelector('#view'),
+          constraints: { facingMode: 'environment', width:{ideal:1920}, height:{ideal:1080} },
+          area
         },
-        locator: {
-          patchSize: "medium", // 'x-small' | 'small' | 'medium' | 'large' | 'x-large'
-          halfSample: false
-        },
+        locator: pass,
         locate: true,
-        numOfWorkers: navigator.hardwareConcurrency ? Math.max(1, Math.min(4, navigator.hardwareConcurrency - 1)) : 2,
         frequency: 10,
-        decoder: { readers: READERS }
-      }, async function(err) {
-        if (err) {
-          console.error("Quagga init error:", err);
-          alert("Помилка ініціалізації сканера. Перевірте HTTPS, дозвіл на камеру або спробуйте іншу камеру.");
-          return;
-        }
-        Quagga.initialized = true;
-        Quagga.start();
-        setStatus(MSG.scanning);
-
-        // Отримати активний трек для керування ліхтариком/зумом
-        try {
-          activeTrack = Quagga.CameraAccess && Quagga.CameraAccess.getActiveTrack && Quagga.CameraAccess.getActiveTrack();
-        } catch(e) { activeTrack = null; }
-
-        // Таймер, якщо нічого не знайдено
-        clearTimeout(timeoutHandle);
-        timeoutHandle = setTimeout(() => setStatus(MSG.noResult), 10000);
-      });
-
-      Quagga.offDetected(onDetected);
-      Quagga.onDetected(onDetected);
-      window.addEventListener("resize", onResizeROI);
-    }
-
-    function computeROI() {
-      // Центр кадру, вузьке «вікно» — краще для вигнутих поверхонь
-      return {
-        top: "33%",
-        right: "5%",
-        left: "5%",
-        bottom: "33%"
-      };
-    }
-    function onResizeROI() {
-      // Оновлюємо ROI для Quagga під час ресайзу
-      try {
-        if (Quagga.initialized) {
-          Quagga.stop();
-          startScanner(document.getElementById("cameraSelect").value || null);
-        }
-      } catch(e) {}
-    }
-
-    function onDetected(result) {
-      const normalized = normalizeAndValidate(result);
-      if (!normalized) return; // відкинути все зайве
-
-      const code = normalized.code;
-      // Потрібна стабільність: 3 підтвердження підряд того ж коду
-      if (code !== lastCode) {
-        lastCode = code;
-        consecutive = 1;
-      } else {
-        consecutive++;
-      }
-      if (consecutive < 3) return;
-
-      // Зафіксовано
-      clearTimeout(timeoutHandle);
-      document.getElementById("scanner-container").classList.add("flash");
-      setTimeout(() => document.getElementById("scanner-container").classList.remove("flash"), 200);
-
-      currentBarcode = code;
-      document.getElementById("barcode").textContent = code;
-      setStatus(MSG.sent);
-      setNote(MSG.sentToTelegram, "#0a7f3f");
-
-      try { Quagga.stop(); } catch(e) {}
-    }
-
-    function restartScanner() {
-      document.getElementById("barcode").textContent = MSG.waiting;
-      clearNote();
-      setStatus(MSG.scanning);
-      startScanner(document.getElementById("cameraSelect").value || null);
-    }
-
-    // Ліхтарик (якщо підтримується)
-    async function toggleTorch() {
-      try {
-        const track = activeTrack;
-        if (!track) return;
-        const caps = track.getCapabilities ? track.getCapabilities() : {};
-        if (!caps.torch) return;
-        torchOn = !torchOn;
-        await track.applyConstraints({ advanced: [{ torch: torchOn }] });
-        document.getElementById("btn-torch").textContent = torchOn ? "Ліхтарик: увімкнено" : "Ліхтарик";
-      } catch(e) { console.warn("Torch not supported:", e); }
-    }
-
-    document.getElementById("btn-restart").onclick = restartScanner;
-    document.getElementById("btn-open").onclick = () => {
-      if (currentBarcode) {
-        // Deep-link до вашого бота з параметром start
-        window.location.href = `https://t.me/NSGChat_bot?start=${currentBarcode}`;
-      }
-    };
-    document.getElementById("btn-torch").onclick = toggleTorch;
-    document.getElementById("cameraSelect").onchange = (e) => startScanner(e.target.value || null);
-
-    window.addEventListener("load", async () => {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert("Браузер не підтримує доступ до камери.");
-        return;
-      }
-      try {
-        await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      } catch(e) {
-        alert("Доступ до камери заборонено або не підтримується.");
-        return;
-      }
-      await listCameras();
-      startScanner();
+        numOfWorkers: navigator.hardwareConcurrency ? Math.min(4, Math.max(1, navigator.hardwareConcurrency-1)) : 2,
+        decoder: { readers: ['ean_reader','ean_8_reader','upc_reader'] }
+      }, (err)=> err ? reject(err) : resolve());
     });
-  </script>
+
+    Quagga.onDetected(res => {
+      const raw = (res && res.codeResult && res.codeResult.code) ? String(res.codeResult.code) : '';
+      const cleaned = raw.replace(/\D+/g,'');
+      const fmt = res && res.codeResult && res.codeResult.format || '';
+      const ok = accept(cleaned, fmt);
+      if (ok) onDetect(ok.code);
+    });
+    Quagga.start();
+    // кожен прохід даємо 5 секунд
+    await new Promise(r => setTimeout(r, 5000));
+    try { Quagga.stop(); } catch {}
+    if (fixed) return; // якщо знайшли — виходимо
+  }
+  if (!fixed) els.status.textContent = MSG.noResult;
+}
+
+/* ===== Обробка результату з дебаунсом ===== */
+function onDetect(code) {
+  if (code !== last) { last = code; conf = 1; return; }
+  conf++;
+  if (conf < NEED_CONF) return;
+
+  fixed = code;
+  els.view.classList.add('flash');
+  setTimeout(()=>els.view.classList.remove('flash'), 180);
+  els.code.textContent = code;
+  els.status.textContent = MSG.sent;
+}
+
+async function toggleTorch() {
+  if (!track) return;
+  try {
+    const caps = track.getCapabilities?.() || {};
+    if (!caps.torch) return;
+    torchOn = !torchOn;
+    await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+    els.torch.textContent = torchOn ? MSG.torchOn : MSG.torchOff;
+  } catch {}
+}
+
+/* ===== Дії користувача ===== */
+els.btnOpen.onclick = () => { if (fixed) location.href = BOT_DEEPLINK + fixed; };
+els.btnRestart.onclick = async () => { fixed=null; last=null; conf=0; els.code.textContent='Очікування сканування'; els.status.textContent=MSG.scanning; };
+els.torch.onclick = toggleTorch;
+
+/* ===== Старт ===== */
+(async () => {
+  if (!navigator.mediaDevices?.getUserMedia) { alert('Браузер не підтримує камеру.'); return; }
+  await startCamera();
+  els.status.textContent = MSG.scanning;
+  if (hasNative) {
+    loopNative();
+  } else {
+    loopQuagga();
+  }
+})();
+</script>
 </body>
 </html>
