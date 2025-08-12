@@ -1,114 +1,191 @@
 <!DOCTYPE html>
 <html lang="uk">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Сканування штрих-коду</title>
-    <script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
-    <style>
-        body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
-        #scanner { width: 100%; max-width: 400px; height: 300px; border: 1px solid #ccc; margin: 20px auto; }
-        #result { margin: 20px; font-size: 18px; }
-        button { padding: 10px 20px; font-size: 16px; margin: 5px; }
-        #torchToggle { display: none; } /* Приховуємо кнопку ліхтарика за замовчуванням */
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Сканування штрих-коду</title>
+  <script src="https://unpkg.com/@ericblade/quagga2@1.2.6/dist/quagga.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      background-color: #f4f4f4;
+      margin: 0;
+      padding: 0;
+    }
+    #scanner-container {
+      width: 100%;
+      height: 60vh;
+      background: black;
+      position: relative;
+      overflow: hidden;
+    }
+    #status {
+      color: white;
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 5px;
+      border-radius: 3px;
+      font-size: 1rem;
+    }
+    #barcode {
+      font-size: 1.5rem;
+      font-weight: bold;
+      margin: 15px;
+      display: inline-block;
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    }
+    .button {
+      display: inline-block;
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 1rem;
+      color: white;
+      background-color: #007bff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .button:hover {
+      background-color: #0056b3;
+    }
+    #notification {
+      display: none;
+      color: green;
+      font-weight: bold;
+      margin: 10px;
+    }
+    .flash {
+      animation: flash 0.3s ease-in-out;
+    }
+    @keyframes flash {
+      0% { background-color: #00ff00; }
+      100% { background-color: transparent; }
+    }
+  </style>
 </head>
 <body>
-    <h1>Сканування штрих-коду</h1>
-    <video id="scanner" autoplay playsinline></video>
-    <p id="result">Ініціалізація…</p>
-    <div>
-        <button onclick="startScanner()">Почати сканування</button>
-        <button onclick="stopScanner()">Сканувати ще раз</button>
-        <button onclick="openTelegram()">Відкрити у Telegram</button>
-        <button id="torchToggle" onclick="toggleTorch()">Ліхтарик</button>
-    </div>
-    <p>Формати: EAN-13 / EAN-8 / UPC-A. Контрольна сума + 3 підтвердження. Автовибір задньої камери.</p>
+  <h1>Сканування штрих-коду</h1>
+  <div id="scanner-container">
+    <div id="status">Сканування...</div>
+  </div>
+  <p>Товар з кодом: <span id="barcode">Очікування сканування</span></p>
+  <div id="notification"></div>
+  <div id="buttons" style="display: none;">
+    <button class="button" onclick="restartScanner()">Сканувати ще раз</button>
+    <button class="button" id="btn-open">Перейти до Telegram</button>
+  </div>
 
-    <script>
-        let codeReader = new ZXing.BrowserMultiFormatReader();
-        let selectedDeviceId;
-        let isScanning = false;
-        let torchEnabled = false;
+  <script>
+    const MSG = {
+      scanning: "Сканування...",
+      sent: "Штрих-код надіслано до Telegram!",
+      noResult: "Не вдалося розпізнати штрих-код. Спробуйте ще раз.",
+      sentToTelegram: "Штрих-код відправлено! Очікуйте відповідь у Telegram.",
+      waiting: "Очікування сканування"
+    };
 
-        // Ініціалізація сканера
-        async function startScanner() {
-            if (isScanning) return;
-            isScanning = true;
-            document.getElementById('result').innerText = 'Очікування сканування…';
+    let lastCode = null;
+    let lastTime = 0;
+    let timeoutHandle = null;
+    let currentBarcode = null;
 
-            try {
-                const videoInputDevices = await codeReader.getVideoInputDevices();
-                if (videoInputDevices.length === 0) {
-                    document.getElementById('result').innerText = 'Камера не знайдена.';
-                    return;
-                }
+    async function startScanner() {
+      if (Quagga.initialized) {
+        Quagga.stop();
+      }
 
-                // Автовибір задньої камери
-                selectedDeviceId = videoInputDevices[videoInputDevices.length - 1].deviceId; // Зазвичай задня камера
-                codeReader.decodeFromVideoDevice(selectedDeviceId, 'scanner', (result, err) => {
-                    if (result) {
-                        document.getElementById('result').innerText = `Товар з кодом: ${result.text}`;
-                        stopScanner(); // Зупиняємо сканування після успіху
-                    }
-                    if (err && !(err instanceof ZXing.NotFoundException)) {
-                        console.error(err);
-                        document.getElementById('result').innerText = 'Помилка сканування.';
-                    }
-                });
-
-                // Перевірка наявності ліхтарика
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: selectedDeviceId } });
-                const track = stream.getVideoTracks()[0];
-                if (track.getCapabilities().torch) {
-                    document.getElementById('torchToggle').style.display = 'inline-block';
-                }
-                stream.getTracks().forEach(track => track.stop());
-            } catch (err) {
-                document.getElementById('result').innerText = 'Помилка доступу до камери: ' + err.message;
-                console.error(err);
-            }
+      Quagga.init({
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: document.querySelector('#scanner-container'),
+          constraints: {
+            facingMode: "environment"
+          }
+        },
+        decoder: {
+          readers: ["ean_reader", "ean_8_reader", "code_128_reader", "upc_reader"]
+        },
+        locate: true
+      }, function(err) {
+        if (err) {
+          console.error("Quagga init error:", err);
+          alert("Помилка ініціалізації сканера. Перевірте дозвіл на камеру або перезавантажте сторінку.");
+          return;
         }
+        Quagga.initialized = true;
+        Quagga.start();
+        document.getElementById("status").textContent = MSG.scanning;
+        document.getElementById("buttons").style.display = "none";
+        document.getElementById("notification").style.display = "none";
+        document.getElementById("barcode").textContent = MSG.waiting;
+        currentBarcode = null;
 
-        // Зупинка сканера
-        function stopScanner() {
-            codeReader.reset();
-            isScanning = false;
-            document.getElementById('result').innerText = 'Сканування зупинено. Натисніть "Почати сканування".';
-        }
+        // таймер на випадок, якщо нічого не знайдено
+        clearTimeout(timeoutHandle);
+        timeoutHandle = setTimeout(() => {
+          document.getElementById("status").textContent = MSG.noResult;
+        }, 10000);
+      });
 
-        // Переключення ліхтарика
-        async function toggleTorch() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: selectedDeviceId } });
-                const track = stream.getVideoTracks()[0];
-                if (track.getCapabilities().torch) {
-                    await track.applyConstraints({
-                        advanced: [{ torch: !torchEnabled }]
-                    });
-                    torchEnabled = !torchEnabled;
-                    document.getElementById('torchToggle').textContent = torchEnabled ? 'Вимкнути ліхтарик' : 'Ліхтарик';
-                }
-                stream.getTracks().forEach(track => track.stop());
-            } catch (err) {
-                console.error('Помилка з ліхтариком:', err);
-            }
-        }
+      Quagga.onDetected(function(result) {
+        const code = result.codeResult.code;
+        const format = result.codeResult.format;
+        const now = Date.now();
+        if (code === lastCode && now - lastTime < 3000) return;
 
-        // Відкриття Telegram
-        function openTelegram() {
-            const code = document.getElementById('result').innerText.replace('Товар з кодом: ', '').trim();
-            if (code) {
-                window.location.href = `https://t.me/NSGChat_bot?start=${encodeURIComponent(code)}`; // Замініть на ваш username бота
-            } else {
-                window.location.href = 'https://t.me/NSGChat_bot'; // Замініть на ваш username бота
-            }
-        }
+        lastCode = code;
+        lastTime = now;
+        currentBarcode = code;
 
-        // Запуск при завантаженні
-        window.onload = () => {
-            document.getElementById('result').innerText = 'Натисніть "Почати сканування" для старту.';
-        };
-    </script>
+        clearTimeout(timeoutHandle);
+        document.getElementById("scanner-container").classList.add("flash");
+        setTimeout(() => document.getElementById("scanner-container").classList.remove("flash"), 300);
+
+        document.getElementById("barcode").textContent = code;
+        document.getElementById("status").textContent = `${MSG.sent} [${format}]`;
+        document.getElementById("notification").textContent = MSG.sentToTelegram;
+        document.getElementById("notification").style.display = "block";
+        document.getElementById("buttons").style.display = "block";
+
+        Quagga.stop();
+      });
+    }
+
+    function restartScanner() {
+      document.getElementById("barcode").textContent = MSG.waiting;
+      document.getElementById("notification").style.display = "none";
+      document.getElementById("buttons").style.display = "none";
+      startScanner();
+    }
+
+    document.getElementById("btn-open").onclick = () => {
+      if (currentBarcode) {
+        window.location.href = `https://t.me/NSGChat_bot?start=${currentBarcode}`;
+      }
+    };
+
+    window.addEventListener('load', async () => {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("Цей браузер не підтримує доступ до камери.");
+        return;
+      }
+
+      try {
+        await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        startScanner();
+      } catch (err) {
+        console.error("Доступ до камери заборонено:", err);
+        alert("❌ Доступ до камери заборонено або не підтримується цим пристроєм.");
+      }
+    });
+  </script>
 </body>
 </html>
