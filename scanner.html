@@ -18,7 +18,7 @@
     <p id="status">Сканування...</p>
     <p id="result">Товар з кодом: Очікування сканування</p>
     <button id="rescan">Сканувати ще раз</button>
-    <a id="toTelegram" href="tg://resolve/?domain=azitbot&start=">Перейти до Telegram</a>
+    <a id="toTelegram" href="tg://resolve/?domain=NSGChat_bot&start=">Перейти до Telegram</a>
 
     <script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
     <script>
@@ -36,7 +36,7 @@
             isScanning = true;
             statusElement.textContent = 'Сканування...';
             resultElement.textContent = 'Товар з кодом: Очікування сканування';
-            toTelegramLink.href = 'tg://resolve/?domain=azitbot&start=';
+            toTelegramLink.href = 'tg://resolve/?domain=NSGChat_bot&start=';
 
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
@@ -46,7 +46,7 @@
                 codeReader.decodeFromVideoDevice(undefined, 'video', (result, err) => {
                     if (result) {
                         resultElement.textContent = `Товар з кодом: ${result.text}`;
-                        toTelegramLink.href = `tg://resolve/?domain=azitbot&start=${result.text}`;
+                        toTelegramLink.href = `tg://resolve/?domain=NSGChat_bot&start=${encodeURIComponent(result.text)}`;
                         stopScanning();
                     }
                     if (err && !(err instanceof ZXing.NotFoundException)) {
@@ -76,7 +76,6 @@
             startScanning();
         });
 
-        // Автоматичний запуск сканування при завантаженні сторінки
         window.addEventListener('load', startScanning);
     </script>
 </body>
